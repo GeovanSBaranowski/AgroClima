@@ -57,10 +57,13 @@ Verifique a conexão:
 
 Colete os dados:
 
+Colete os dados:
+
 ```powershell
 .\.venv\Scripts\python.exe .\src\coletar_clima.py --inicio 2024-01-01 --fim 2024-01-07
-*--inicio e --fim sao obrigatorios
 ```
+
+Os argumentos `--inicio` e `--fim` são obrigatórios e permitem escolher o período da consulta.
 
 Normalize e carregue os arquivos disponíveis:
 
@@ -86,7 +89,7 @@ O nome do arquivo de origem e o instante da carga são registrados no banco.
 .\.venv\Scripts\python.exe -m pytest -q
 ```
 
-Os testes verificam o tratamento do marcador de ausência, de valores nulos, de temperatura zero e de uma temperatura válida.
+Os testes verificam o tratamento de temperaturas e a validação do período de coleta.
 
 ## Organização
 
@@ -100,7 +103,7 @@ Os testes verificam o tratamento do marcador de ausência, de valores nulos, de 
 
 Os dados meteorológicos têm resolução regional e não representam uma medição realizada diretamente em uma propriedade rural.
 
-As próximas etapas incluem parametrizar as coletas, adicionar outras variáveis meteorológicas, incorporar imagens de satélite, construir o mapa e preparar a execução na AWS.
+As próximas etapas incluem adicionar outras variáveis meteorológicas, incorporar imagens de satélite, construir o mapa e preparar a execução na AWS.
 
 ## Fonte dos dados
 
