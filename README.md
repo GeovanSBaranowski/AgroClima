@@ -58,7 +58,8 @@ Verifique a conexão:
 Colete os dados:
 
 ```powershell
-.\.venv\Scripts\python.exe .\src\coletar_clima.py
+.\.venv\Scripts\python.exe .\src\coletar_clima.py --inicio 2024-01-01 --fim 2024-01-07
+*--inicio e --fim sao obrigatorios
 ```
 
 Normalize e carregue os arquivos disponíveis:
