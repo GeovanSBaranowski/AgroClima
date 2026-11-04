@@ -40,7 +40,7 @@ if __name__ == "__main__":
     url = "https://power.larc.nasa.gov/api/temporal/daily/point"
 
     parametros = {
-        "parameters": "T2M",
+        "parameters": "T2M,RH2M,PRECTOTCORR",
         "community": "AG",
         "latitude": "-27.10",
         "longitude": "-52.62",
@@ -58,12 +58,17 @@ if __name__ == "__main__":
     if dados["header"]["time_standard"] != parametros["time-standard"]:
         raise ValueError("A referencia temporal difere da solicitada")
 
-    temperaturas = dados["properties"]["parameter"]["T2M"]
+    series = dados["properties"]["parameter"]
 
-    print(resposta.status_code)
+    for codigo, valores_por_data in series.items():
+        metadados = dados["parameters"][codigo]
+        unidade = metadados["units"]
 
-    for data, temperatura in temperaturas.items():
-        print(data, temperatura)
+        print(
+            f"{codigo} | "
+            f"unidade: {unidade} | "
+            f"dias: {len(valores_por_data)}"
+        )
 
     ##-----------------------------------------------------------------------------------------------------------
     ##Armazenamento do arquivo JSON

@@ -5,16 +5,18 @@ from pathlib import Path
 import psycopg
 from dotenv import load_dotenv
 
-from normalizar_clima import normalizar_temperaturas
+from normalizar_clima import normalizar_observacoes
 
 
-def carregar_temperaturas(conexao, registros, arquivo_origem):
+def carregar_observacoes(conexao, registros, arquivo_origem):
 
-    comando_sql = """INSERT INTO silver.temperatura_diaria (
+    comando_sql = """INSERT INTO silver.observacao_meteorologica_diaria (
                     data_observacao,
                     latitude,
                     longitude,
-                    temperatura_c,
+                    variavel,
+                    valor,
+                    unidade,
                     fonte,
                     referencia_temporal,
                     arquivo_origem
@@ -23,7 +25,9 @@ def carregar_temperaturas(conexao, registros, arquivo_origem):
                     %(data_observacao)s,
                     %(latitude)s,
                     %(longitude)s,
-                    %(temperatura_c)s,
+                    %(variavel)s,
+                    %(valor)s,
+                    %(unidade)s,
                     %(fonte)s,
                     %(referencia_temporal)s,
                     %(arquivo_origem)s
@@ -32,6 +36,7 @@ def carregar_temperaturas(conexao, registros, arquivo_origem):
                     data_observacao,
                     latitude,
                     longitude,
+                    variavel,
                     fonte,
                     referencia_temporal
                 )
@@ -71,9 +76,9 @@ if __name__ == "__main__":
                 arquivo_raw.read_text(encoding="utf-8")
             )
 
-            registros = normalizar_temperaturas(dados)
+            registros = normalizar_observacoes(dados)
 
-            inseridos = carregar_temperaturas(
+            inseridos = carregar_observacoes(
                 conexao,
                 registros,
                 arquivo_raw.name
