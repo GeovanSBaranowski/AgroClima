@@ -4,6 +4,8 @@ from pathlib import Path
 
 import requests
 
+from configuracao import LATITUDE_REFERENCIA, LONGITUDE_REFERENCIA
+
 
 def ler_argumentos(lista_argumentos=None):
     parser = argparse.ArgumentParser(
@@ -42,8 +44,8 @@ if __name__ == "__main__":
     parametros = {
         "parameters": "T2M,RH2M,PRECTOTCORR",
         "community": "AG",
-        "latitude": "-27.10",
-        "longitude": "-52.62",
+        "latitude": LATITUDE_REFERENCIA,
+        "longitude": LONGITUDE_REFERENCIA,
         "start": argumentos.inicio.strftime("%Y%m%d"),
         "end": argumentos.fim.strftime("%Y%m%d"),
         "format": "JSON",

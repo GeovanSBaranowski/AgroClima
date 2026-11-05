@@ -29,6 +29,8 @@ As variáveis coletadas são:
 
 As consultas utilizam UTC e as coordenadas aproximadas de Chapecó: latitude -27.10 e longitude -52.62.
 
+As coordenadas usadas no coletor meteorológico, na consulta ao banco e no mapa são definidas em `src/configuracao.py`.
+
 ## Tecnologias
 
 - Python 3.12
@@ -174,7 +176,7 @@ Os dados meteorológicos têm resolução regional e não representam uma mediç
 
 O limite municipal é simplificado e serve para a visualização inicial. A validação atual não verifica a validade geométrica completa do polígono. As medições exibidas correspondem ao ponto de consulta e não descrevem a variação meteorológica dentro do município.
 
-As próximas etapas incluem centralizar a configuração do ponto de referência, incorporar imagens de satélite e dados do terreno e preparar a execução na AWS.
+As próximas etapas incluem incorporar imagens de satélite e dados do terreno e preparar a execução na AWS.
 
 ## Fontes dos dados
 
