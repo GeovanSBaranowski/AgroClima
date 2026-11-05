@@ -10,6 +10,7 @@ import psycopg
 from dotenv import load_dotenv
 
 from coletar_limite import validar_limite
+from configuracao import LATITUDE_REFERENCIA, LONGITUDE_REFERENCIA
 from consultar_clima import consultar_observacoes
 
 
@@ -81,7 +82,7 @@ if __name__ == "__main__":
 
     validar_limite(dados, "4204202")
 
-    ponto_referencia = [-27.10, -52.62]
+    ponto_referencia = [LATITUDE_REFERENCIA, LONGITUDE_REFERENCIA]
 
     load_dotenv(raiz_projeto / ".env")
 

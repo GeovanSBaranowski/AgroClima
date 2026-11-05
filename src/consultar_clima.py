@@ -7,6 +7,8 @@ import psycopg
 from dotenv import load_dotenv
 from psycopg.rows import dict_row
 
+from configuracao import LATITUDE_REFERENCIA, LONGITUDE_REFERENCIA
+
 
 def consultar_observacoes(
     conexao,
@@ -69,8 +71,8 @@ if __name__ == "__main__":
         registros = consultar_observacoes(
             conexao,
             data_observacao=argumentos.data,
-            latitude=-27.10,
-            longitude=-52.62,
+            latitude=LATITUDE_REFERENCIA,
+            longitude=LONGITUDE_REFERENCIA,
         )
 
     print(f"Observacoes encontradas: {len(registros)}")
