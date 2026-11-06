@@ -16,6 +16,9 @@ O projeto realiza:
 - Coleta e validação do limite municipal de Chapecó pela API do IBGE.
 - Consulta das observações armazenadas no PostgreSQL por data e ponto de referência.
 - Geração de um mapa com o limite municipal e as medições meteorológicas no marcador.
+- Consulta paginada de cenas Sentinel-2 pelo catálogo Earth Search, usando o limite municipal.
+- Armazenamento dos critérios da consulta e das páginas originais em JSON.
+- Normalização e carga dos metadados das cenas em `silver.cena_satelite`, sem duplicar cenas já carregadas.
 - Testes automatizados dos argumentos da coleta, da normalização, da validação do limite municipal e do conteúdo do popup.
 - Execução dos testes no GitHub Actions a cada push ou atualização de pull request.
 
@@ -63,6 +66,7 @@ Para uma instalação nova, prepare o banco pelo pgAdmin:
 2. Abra uma conexão com o banco `agroclima_sc`.
 3. Execute `CREATE SCHEMA IF NOT EXISTS silver;`.
 4. Execute `sql/003_criar_observacoes_meteorologicas.sql`.
+5. Execute `sql/004_criar_cenas_satelite.sql`.
 
 ## Execução
 
@@ -138,7 +142,43 @@ Para encerrar o servidor, pressione `Ctrl+C` no terminal.
 
 O mapa mostra o limite do IBGE, um fundo do OpenStreetMap e o ponto utilizado nas consultas à NASA POWER. As coordenadas do marcador estão na ordem latitude, longitude. Os arquivos GeoJSON e HTML gerados ficam fora do versionamento.
 
-## Tratamento dos dados
+## Catálogo de satélite
+
+A consulta utiliza o Earth Search v1 e a coleção `sentinel-2-c1-l2a`. O polígono utilizado é o limite de Chapecó mais recente disponível em `data/raw/ibge_malhas`.
+
+Execute a consulta:
+
+```powershell
+.\.venv\Scripts\python.exe .\src\consultar_satelite.py
+```
+
+O período está definido no código: de 1 a 7 de fevereiro de 2024, em UTC. Cada página solicita até cinco registros. A coleta segue os links de continuação por POST e interrompe com erro se ainda houver continuação após cem páginas.
+
+Cada execução cria uma pasta em `data/raw/earth_search`, identificada pelo instante da coleta em UTC. O arquivo `consulta.json` registra os critérios utilizados. Os arquivos `pagina_001.json`, `pagina_002.json` e seguintes preservam as respostas recebidas, inclusive páginas vazias.
+
+Para inspecionar os registros normalizados de uma execução:
+
+```powershell
+.\.venv\Scripts\python.exe .\src\normalizar_satelite.py --pasta .\data\raw\earth_search\20261106T001415084591Z
+```
+
+Para normalizar e carregar as cenas dessa execução no PostgreSQL:
+
+```powershell
+.\.venv\Scripts\python.exe .\src\carregar_satelite.py --pasta .\data\raw\earth_search\20261106T001415084591Z
+```
+
+Substitua o identificador da pasta pelo da consulta que deseja processar. Execute os comandos na raiz do projeto; a pasta usada na carga precisa estar dentro do projeto.
+
+A tabela `silver.cena_satelite` armazena a coleção, o identificador da cena, o horário de observação, a plataforma, a porcentagem de nuvens da cena e os endereços da imagem em cores naturais e do arquivo de classificação SCL. Também registra o caminho relativo da página de origem e o instante da carga.
+
+Cada cena é identificada pela combinação de coleção e identificador. A carga utiliza `ON CONFLICT DO NOTHING`, mantendo os dados e a origem da primeira inserção. Todas as páginas da execução são carregadas na mesma transação.
+
+A porcentagem de nuvens pode ser nula; quando informada, deve estar entre zero e cem. O valor zero é preservado.
+
+Esta etapa armazena os metadados e os endereços dos arquivos. As imagens ainda não são baixadas, recortadas ou exibidas no mapa.
+
+## Tratamento dos dados meteorológicos
 
 Cada registro representa uma variável meteorológica em uma data e localização. As unidades recebidas são validadas antes da carga.
 
@@ -160,6 +200,8 @@ Os testes verificam os argumentos do período de coleta, a normalização das tr
 
 Os testes do popup conferem a data, a fonte, as medições e as unidades exibidas, a diferença entre zero e valor ausente, a mensagem para datas sem observações e o tratamento de caracteres especiais como texto.
 
+Os testes de satélite simulam a paginação HTTP, verificam o envio do corpo de continuação e a gravação das duas respostas, incluindo uma página vazia. Também verificam a normalização de várias cenas, a preservação de zero, o tratamento de páginas vazias e a rejeição de porcentagens fora do intervalo permitido.
+
 Os testes usam dados de exemplo e não dependem de consultas às APIs ou de uma conexão com o banco. O GitHub Actions executa a suíte em Linux com Python 3.12.
 
 ## Organização
@@ -176,10 +218,13 @@ Os dados meteorológicos têm resolução regional e não representam uma mediç
 
 O limite municipal é simplificado e serve para a visualização inicial. A validação atual não verifica a validade geométrica completa do polígono. As medições exibidas correspondem ao ponto de consulta e não descrevem a variação meteorológica dentro do município.
 
-As próximas etapas incluem incorporar imagens de satélite e dados do terreno e preparar a execução na AWS.
+A porcentagem de nuvens recebida do catálogo se refere à cena, e não ao polígono de Chapecó. A busca seleciona cenas que intersectam o município; ela não recorta imagens nem garante cobertura completa do município por cada cena. O catálogo atual ainda utiliza um período fixo no código.
+
+As próximas etapas incluem processar e incorporar imagens de satélite ao mapa, adicionar dados do terreno e preparar a execução na AWS.
 
 ## Fontes dos dados
 
 - [NASA POWER — documentação da API diária](https://power.larc.nasa.gov/docs/services/api/temporal/daily/)
 - [IBGE — documentação da API de malhas](https://servicodados.ibge.gov.br/api/docs/malhas?versao=4)
+- [Earth Search — documentação do catálogo](https://github.com/Element84/earth-search)
 - [OpenStreetMap — dados e atribuição](https://www.openstreetmap.org/copyright)
