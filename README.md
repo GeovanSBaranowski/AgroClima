@@ -22,7 +22,10 @@ O projeto realiza:
 - Download de miniaturas e inspeção de metadados dos GeoTIFFs remotos.
 - Recorte das imagens pelo polígono da consulta e montagem de mosaicos com máscara de validade.
 - Exibição do mosaico no mapa, com transparência fora do recorte e controle de camadas.
-- Testes automatizados da coleta, da normalização, da validação do limite, do popup e da montagem do mosaico.
+- Inspeção, recorte e mosaico da classificação SCL do Sentinel-2.
+- Contagem das categorias SCL e cálculo de seus percentuais entre os pixels disponíveis.
+- Avaliação da cobertura de dados SCL em relação ao polígono da consulta.
+- Testes automatizados da coleta, da normalização, da validação do limite, do popup, dos mosaicos e da avaliação SCL.
 - Execução dos testes no GitHub Actions a cada push ou atualização de pull request.
 
 As variáveis coletadas são:
@@ -225,7 +228,7 @@ $arquivoMosaico = Join-Path $pastaRecortes "chapeco_20240201_mosaico.tif"
 .\.venv\Scripts\python.exe .\src\montar_mosaico.py --arquivos $cenaSul $cenaNorte --saida $arquivoMosaico
 ```
 
-A ordem dos arquivos define a prioridade: na sobreposição, o primeiro pixel válido é mantido. A junção exige o mesmo sistema de coordenadas, a mesma resolução e três bandas `uint8`. O resultado mantém pixels pretos válidos e registra a ordem das fontes e o critério de sobreposição nas tags do GeoTIFF.
+A ordem dos arquivos define a prioridade: na sobreposição, o primeiro pixel válido é mantido. A junção aceita uma ou três bandas `uint8` e exige o mesmo sistema de coordenadas, a mesma resolução e a mesma quantidade de bandas em todos os arquivos de entrada. O resultado mantém pixels pretos válidos e registra a ordem das fontes e o critério de sobreposição nas tags do GeoTIFF.
 
 Para exibir o mosaico junto às observações meteorológicas:
 
@@ -244,6 +247,60 @@ Para comparar os contornos das cenas com o limite municipal:
 O argumento `--pasta-cenas` percorre todas as páginas e adiciona somente os contornos das cenas observadas na data escolhida, em UTC. Pode ser combinado com `--raster`.
 
 Cada geração substitui `data/maps/chapeco.html`. Utilize o servidor HTTP descrito anteriormente para abrir o mapa. O controle de camadas permite mostrar ou esconder a imagem, o limite municipal e os contornos adicionados.
+
+## Classificação SCL e cobertura
+
+A SCL atribui uma categoria a cada pixel, como vegetação, água, nuvens ou sombras. No exemplo, a imagem colorida tem três bandas e resolução de 10 metros; a SCL tem uma banda e resolução de 20 metros.
+
+Prepare os caminhos para as duas cenas da mesma data:
+
+```powershell
+$pastaConsulta = ".\data\raw\earth_search\20261106T001415084591Z"
+$paginaSatelite = Join-Path $pastaConsulta "pagina_001.json"
+$idCenaSul = "S2A_T22JCQ_20240201T133141_L2A"
+$idCenaNorte = "S2A_T22JCR_20240201T133141_L2A"
+```
+
+Inspecione a classificação e recorte as duas cenas:
+
+```powershell
+.\.venv\Scripts\python.exe .\src\inspecionar_raster.py --pagina $paginaSatelite --id-cena $idCenaSul --asset scl
+.\.venv\Scripts\python.exe .\src\recortar_cena.py --pagina $paginaSatelite --id-cena $idCenaSul --asset scl
+.\.venv\Scripts\python.exe .\src\recortar_cena.py --pagina $paginaSatelite --id-cena $idCenaNorte --asset scl
+```
+
+O argumento `--asset` aceita `visual` ou `scl`. Quando omitido, utiliza `visual`. Os recortes SCL recebem o final `_scl_chapeco.tif`, preservando os arquivos coloridos.
+
+Monte um mosaico da classificação na mesma ordem utilizada para as imagens coloridas:
+
+```powershell
+$pastaRecortes = Join-Path ".\data\processed\sentinel2" (Split-Path $pastaConsulta -Leaf)
+$sclSul = Join-Path $pastaRecortes "$($idCenaSul)_scl_chapeco.tif"
+$sclNorte = Join-Path $pastaRecortes "$($idCenaNorte)_scl_chapeco.tif"
+$mosaicoScl = Join-Path $pastaRecortes "chapeco_20240201_scl_mosaico.tif"
+
+.\.venv\Scripts\python.exe .\src\montar_mosaico.py --arquivos $sclSul $sclNorte --saida $mosaicoScl
+```
+
+A sobreposição mantém o primeiro pixel válido, sem calcular médias entre códigos de classificação. Esse critério não escolhe automaticamente o pixel com menos nuvens.
+
+Avalie as categorias e a cobertura do polígono:
+
+```powershell
+$arquivoConsulta = Join-Path $pastaConsulta "consulta.json"
+
+.\.venv\Scripts\python.exe .\src\avaliar_qualidade_satelite.py --raster $mosaicoScl --consulta $arquivoConsulta
+```
+
+O resumo ignora posições mascaradas e o código zero, que representa ausência de dados. Exibe apenas as categorias presentes, com suas quantidades e percentuais. Os códigos 8, 9 e 10 representam categorias de nuvens; 2 e 3 representam categorias de sombras. A descrição de vegetação não identifica, por si só, uma lavoura.
+
+Os percentuais são calculados entre os pixels disponíveis do arquivo informado. Ao avaliar um recorte de uma única cena, o resultado se refere somente à parte coberta por ela. Valores muito pequenos podem aparecer como `0.00%` devido ao arredondamento; a quantidade de pixels continua sendo exibida.
+
+O argumento opcional `--consulta` permite comparar os pixels com dados SCL aos pixels esperados para todo o polígono salvo em `consulta.json`, na grade do raster. A leitura considera também as partes do polígono que estejam fora da extensão do arquivo. A seleção de pixels utiliza a mesma regra do recorte, com `all_touched=False`.
+
+Cobertura de 100% significa presença de dados SCL em todos os pixels esperados para esse polígono e essa grade. Pixels classificados como nuvens ou sombras também contam como dados existentes. A cobertura não mede a porcentagem de pixels adequados a uma análise agrícola.
+
+O mosaico SCL é utilizado na avaliação numérica. A camada atual do mapa continua esperando uma imagem colorida de três bandas.
 
 ## Tratamento dos dados meteorológicos
 
@@ -269,7 +326,9 @@ Os testes do popup conferem a data, a fonte, as medições e as unidades exibida
 
 Os testes de satélite simulam a paginação HTTP, verificam o envio do corpo de continuação e a gravação das duas respostas, incluindo uma página vazia. Também verificam a normalização de várias cenas, a preservação de zero, o tratamento de páginas vazias e a rejeição de porcentagens fora do intervalo permitido.
 
-O teste do mosaico cria pequenos GeoTIFFs locais para verificar a prioridade na sobreposição, o uso da segunda imagem quando a primeira tem um pixel inválido, a preservação do zero válido, a máscara e a posição geográfica do resultado. A aparência e o alinhamento da camada de satélite também foram conferidos manualmente no navegador.
+O teste do mosaico cria pequenos GeoTIFFs locais, com uma e três bandas, para verificar a prioridade na sobreposição, o uso da segunda imagem quando a primeira tem um pixel inválido, a preservação do zero válido, a máscara e a posição geográfica do resultado. A aparência e o alinhamento da camada de satélite também foram conferidos manualmente no navegador.
+
+Os testes da avaliação SCL verificam a contagem das categorias, a exclusão de pixels mascarados e do código zero, a rejeição de códigos desconhecidos e a ausência de classificação. Também verificam cobertura completa, arquivo com extensão parcial, pixels sem dados ou mascarados, nuvens contadas como dados existentes e buracos no polígono.
 
 Os testes usam dados de exemplo e não dependem de consultas às APIs ou de uma conexão com o banco. O GitHub Actions executa a suíte em Linux com Python 3.12.
 
@@ -297,11 +356,12 @@ A seleção das cenas e a correspondência entre a data do mosaico e `--data` s�
 
 A prévia do HTML tem resolução reduzida para exibição e perde detalhes ao ampliar. Os GeoTIFFs mantêm a resolução de origem. A imagem em cores naturais serve para visualização; os próximos indicadores devem utilizar as bandas apropriadas.
 
-As próximas etapas incluem avaliar a qualidade dos pixels, desenvolver indicadores para a vegetação, adicionar dados do terreno e preparar a execução na AWS.
+As próximas etapas incluem aplicar critérios de qualidade para excluir pixels de nuvens e sombras, desenvolver indicadores para a vegetação, adicionar dados do terreno e preparar a execução na AWS.
 
 ## Fontes dos dados
 
 - [NASA POWER — documentação da API diária](https://power.larc.nasa.gov/docs/services/api/temporal/daily/)
 - [IBGE — documentação da API de malhas](https://servicodados.ibge.gov.br/api/docs/malhas?versao=4)
 - [Earth Search — documentação do catálogo](https://github.com/Element84/earth-search)
+- [Copernicus — processamento e categorias SCL](https://sentiwiki.copernicus.eu/web/s2-processing)
 - [OpenStreetMap — dados e atribuição](https://www.openstreetmap.org/copyright)

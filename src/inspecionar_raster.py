@@ -5,12 +5,16 @@ from pathlib import Path
 import rasterio
 
 
-def obter_url_visual(dados, id_cena):
+def obter_url_asset(dados, id_cena, asset):
     for cena in dados["features"]:
         if cena["id"] == id_cena:
-            return cena["assets"]["visual"]["href"]
+            return cena["assets"][asset]["href"]
 
     raise ValueError(f"Cena nao encontrada nesta pagina: {id_cena}")
+
+
+def obter_url_visual(dados, id_cena):
+    return obter_url_asset(dados, id_cena, "visual")
 
 def inspecionar_raster(url):
     with rasterio.Env(GDAL_HTTP_TIMEOUT="30"):  # noqa: SIM117
@@ -52,6 +56,13 @@ if __name__ == "__main__":
         help="Identificador da cena desejada",
     )
 
+    parser.add_argument(
+        "--asset",
+        choices=["visual", "scl"],
+        default="visual",
+        help="Arquivo da cena a inspecionar: visual ou scl",
+    )
+
     argumentos = parser.parse_args()
 
     arquivo_pagina = (raiz_projeto / argumentos.pagina).resolve()
@@ -60,7 +71,11 @@ if __name__ == "__main__":
         arquivo_pagina.read_text(encoding="utf-8")
     )
 
-    url = obter_url_visual(dados, argumentos.id_cena)
+    url = obter_url_asset(
+        dados,
+        argumentos.id_cena,
+        argumentos.asset,
+    )
     metadados = inspecionar_raster(url)
 
     print(f"Cena: {argumentos.id_cena}")
