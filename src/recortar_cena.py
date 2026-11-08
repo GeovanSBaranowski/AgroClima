@@ -7,7 +7,7 @@ import rasterio
 from rasterio.mask import mask
 from rasterio.warp import transform_geom
 
-from inspecionar_raster import inspecionar_raster, obter_url_visual
+from inspecionar_raster import inspecionar_raster, obter_url_asset
 
 
 def recortar_cena(url, geometria_lonlat, arquivo_saida):
@@ -86,6 +86,13 @@ if __name__ == "__main__":
         help="Identificador da cena desejada",
     )
 
+    parser.add_argument(
+        "--asset",
+        choices=["visual", "scl"],
+        default="visual",
+        help="Arquivo da cena a recortar: visual ou scl",
+    )
+
     argumentos = parser.parse_args()
 
     arquivo_pagina = (
@@ -102,9 +109,10 @@ if __name__ == "__main__":
         arquivo_consulta.read_text(encoding="utf-8")
     )
 
-    url = obter_url_visual(
+    url = obter_url_asset(
         dados_pagina,
         argumentos.id_cena,
+        argumentos.asset,
     )
 
     geometria = dados_consulta["criterios"]["intersects"]
@@ -117,9 +125,12 @@ if __name__ == "__main__":
         / arquivo_pagina.parent.name
     )
 
-    arquivo_saida = (
-        pasta_saida / f"{argumentos.id_cena}_chapeco.tif"
-    )
+    if argumentos.asset == "visual":
+        nome_arquivo = f"{argumentos.id_cena}_chapeco.tif"
+    else:
+        nome_arquivo = f"{argumentos.id_cena}_scl_chapeco.tif"
+
+    arquivo_saida = pasta_saida / nome_arquivo
 
     recortar_cena(
         url,

@@ -47,9 +47,19 @@ def montar_mosaico(arquivos, arquivo_saida):
                     "As imagens precisam ter a mesma resolucao"
                 )
 
-            if fonte.dtypes != ("uint8", "uint8", "uint8"):
+            if fonte.count not in (1, 3):
                 raise ValueError(
-                    "Esta etapa espera tres bandas do tipo uint8"
+                    "Esta etapa espera uma ou tres bandas"
+                )
+
+            if fonte.count != referencia.count:
+                raise ValueError(
+                    "As imagens precisam ter a mesma quantidade de bandas"
+                )
+
+            if any(tipo != "uint8" for tipo in fonte.dtypes):
+                raise ValueError(
+                    "Todas as bandas precisam ser do tipo uint8"
                 )
 
         mosaico, transformacao = merge(
