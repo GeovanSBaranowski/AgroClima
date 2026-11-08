@@ -1,7 +1,7 @@
 import argparse
 import json
 import os
-from datetime import date
+from datetime import date, datetime, timezone
 from html import escape
 from pathlib import Path
 
@@ -9,6 +9,7 @@ import folium
 import psycopg
 from dotenv import load_dotenv
 
+from camada_satelite import adicionar_camada_satelite
 from coletar_limite import validar_limite
 from configuracao import LATITUDE_REFERENCIA, LONGITUDE_REFERENCIA
 from consultar_clima import consultar_observacoes
@@ -46,6 +47,49 @@ def montar_popup(registros, data_observacao):
 
     return "<br>".join(linhas)
 
+def estilizar_contorno_cena(feicao):
+    return {
+        "color": "#e67e22",
+        "weight": 2,
+        "fill": False,
+    }
+
+def adicionar_contornos_cenas(mapa, dados_catalogo, data_observacao):
+    if dados_catalogo.get("type") != "FeatureCollection":
+        raise ValueError("O catalogo precisa ser uma FeatureCollection")
+
+    total = 0
+
+    for cena in dados_catalogo["features"]:
+        instante = datetime.fromisoformat(
+            cena["properties"]["datetime"]
+        )
+
+        data_cena = instante.astimezone(timezone.utc).date()
+
+        if data_cena != data_observacao:
+            continue
+
+        identificador = escape(cena["id"])
+
+        folium.GeoJson(
+            data=cena["geometry"],
+            name=f"Cena {identificador}",
+            tooltip=identificador,
+            style_function=estilizar_contorno_cena,
+        ).add_to(mapa)
+
+        total += 1
+
+    return total
+
+def estilizar_limite_municipal(feicao):
+    return {
+        "color": "#3388ff",
+        "weight": 2,
+        "fill": False,
+    }
+        
 if __name__ == "__main__":
 
     parser = argparse.ArgumentParser(
@@ -57,6 +101,18 @@ if __name__ == "__main__":
         type=date.fromisoformat,
         required=True,
         help="Data das observacoes, por exemplo: 2024-02-01",
+    )
+
+    parser.add_argument(
+        "--pasta-cenas",
+        type=Path,
+        help="Pasta da consulta ao catalogo de satelite",
+    )
+
+    parser.add_argument(
+        "--raster",
+        type=Path,
+        help="GeoTIFF que sera exibido no mapa",
     )
 
     argumentos = parser.parse_args()
@@ -112,11 +168,51 @@ if __name__ == "__main__":
         control_scale=True,
     )
 
+    if argumentos.raster is not None:
+        arquivo_raster = (
+            raiz_projeto / argumentos.raster
+        ).resolve()
+
+        adicionar_camada_satelite(
+            mapa,
+            arquivo_raster,
+        )
+
+        print(f"Imagem utilizada: {arquivo_raster}")
+
     limite = folium.GeoJson(
         data=dados,
         name="Limite municipal de Chapeco",
         tooltip="Chapeco - IBGE",
+        style_function=estilizar_limite_municipal,
     ).add_to(mapa)
+
+    if argumentos.pasta_cenas is not None:
+        pasta_cenas = (
+            raiz_projeto / argumentos.pasta_cenas
+        ).resolve()
+
+        paginas = sorted(pasta_cenas.glob("pagina_*.json"))
+
+        if not paginas:
+            raise FileNotFoundError(
+                f"Nenhuma pagina encontrada em {pasta_cenas}"
+            )
+
+        total_contornos = 0
+
+        for pagina in paginas:
+            dados_catalogo = json.loads(
+                pagina.read_text(encoding="utf-8")
+            )
+
+            total_contornos += adicionar_contornos_cenas(
+                mapa,
+                dados_catalogo,
+                argumentos.data,
+            )
+
+        print(f"Contornos de cenas adicionados: {total_contornos}")
 
     folium.Marker(
         location=ponto_referencia,
@@ -127,6 +223,7 @@ if __name__ == "__main__":
         ),
     ).add_to(mapa)
 
+    folium.LayerControl(collapsed=False).add_to(mapa)
     mapa.fit_bounds(limite.get_bounds())
 
     pasta_mapas = raiz_projeto / "data" / "maps"

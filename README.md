@@ -19,7 +19,10 @@ O projeto realiza:
 - Consulta paginada de cenas Sentinel-2 pelo catálogo Earth Search, usando o limite municipal.
 - Armazenamento dos critérios da consulta e das páginas originais em JSON.
 - Normalização e carga dos metadados das cenas em `silver.cena_satelite`, sem duplicar cenas já carregadas.
-- Testes automatizados dos argumentos da coleta, da normalização, da validação do limite municipal e do conteúdo do popup.
+- Download de miniaturas e inspeção de metadados dos GeoTIFFs remotos.
+- Recorte das imagens pelo polígono da consulta e montagem de mosaicos com máscara de validade.
+- Exibição do mosaico no mapa, com transparência fora do recorte e controle de camadas.
+- Testes automatizados da coleta, da normalização, da validação do limite, do popup e da montagem do mosaico.
 - Execução dos testes no GitHub Actions a cada push ou atualização de pull request.
 
 As variáveis coletadas são:
@@ -42,6 +45,8 @@ As coordenadas usadas no coletor meteorológico, na consulta ao banco e no mapa 
 - Psycopg
 - python-dotenv
 - Folium
+- NumPy
+- Rasterio
 - pytest
 - Git
 - GitHub Actions
@@ -140,7 +145,7 @@ Mantenha o terminal aberto e acesse [o mapa local](http://127.0.0.1:8000/chapeco
 
 Para encerrar o servidor, pressione `Ctrl+C` no terminal.
 
-O mapa mostra o limite do IBGE, um fundo do OpenStreetMap e o ponto utilizado nas consultas à NASA POWER. As coordenadas do marcador estão na ordem latitude, longitude. Os arquivos GeoJSON e HTML gerados ficam fora do versionamento.
+O mapa mostra o limite do IBGE, um fundo do OpenStreetMap e o ponto utilizado nas consultas à NASA POWER. Também pode exibir o mosaico de satélite e os contornos das cenas. As coordenadas do marcador estão na ordem latitude, longitude. Os arquivos GeoJSON e HTML gerados ficam fora do versionamento.
 
 ## Catálogo de satélite
 
@@ -176,7 +181,69 @@ Cada cena é identificada pela combinação de coleção e identificador. A carg
 
 A porcentagem de nuvens pode ser nula; quando informada, deve estar entre zero e cem. O valor zero é preservado.
 
-Esta etapa armazena os metadados e os endereços dos arquivos. As imagens ainda não são baixadas, recortadas ou exibidas no mapa.
+A consulta e a carga do catálogo armazenam os metadados e os endereços dos arquivos. O processamento das imagens é feito pelos scripts descritos a seguir.
+
+## Prévia, recorte e mosaico
+
+O exemplo utiliza as duas cenas de 1 de fevereiro de 2024 encontradas para Chapecó. Ajuste a pasta para uma execução existente da consulta ao catálogo:
+
+```powershell
+$pastaConsulta = ".\data\raw\earth_search\20261106T001415084591Z"
+$paginaSatelite = Join-Path $pastaConsulta "pagina_001.json"
+$idCenaSul = "S2A_T22JCQ_20240201T133141_L2A"
+$idCenaNorte = "S2A_T22JCR_20240201T133141_L2A"
+```
+
+Os identificadores precisam estar presentes na página informada. Para baixar uma miniatura JPEG e inspecionar os metadados do GeoTIFF remoto:
+
+```powershell
+.\.venv\Scripts\python.exe .\src\baixar_previa_satelite.py --pagina $paginaSatelite --id-cena $idCenaSul
+.\.venv\Scripts\python.exe .\src\inspecionar_raster.py --pagina $paginaSatelite --id-cena $idCenaSul
+```
+
+A miniatura fica em `data/previews`. A inspeção mostra dimensões, bandas, tipos de dados, sistema de coordenadas, resolução e limites do arquivo remoto.
+
+Recorte as duas cenas:
+
+```powershell
+.\.venv\Scripts\python.exe .\src\recortar_cena.py --pagina $paginaSatelite --id-cena $idCenaSul
+.\.venv\Scripts\python.exe .\src\recortar_cena.py --pagina $paginaSatelite --id-cena $idCenaNorte
+```
+
+O recorte utiliza o polígono de `consulta.json`, na mesma pasta da página, convertendo suas coordenadas para o sistema da imagem. Cada saída preserva a resolução e o sistema de coordenadas da origem e grava uma máscara interna de validade.
+
+Os recortes ficam em `data/processed/sentinel2`, em uma subpasta com o identificador da consulta. Cada cena pode cobrir apenas parte do município.
+
+Monte o mosaico:
+
+```powershell
+$pastaRecortes = Join-Path ".\data\processed\sentinel2" (Split-Path $pastaConsulta -Leaf)
+$cenaSul = Join-Path $pastaRecortes "$($idCenaSul)_chapeco.tif"
+$cenaNorte = Join-Path $pastaRecortes "$($idCenaNorte)_chapeco.tif"
+$arquivoMosaico = Join-Path $pastaRecortes "chapeco_20240201_mosaico.tif"
+
+.\.venv\Scripts\python.exe .\src\montar_mosaico.py --arquivos $cenaSul $cenaNorte --saida $arquivoMosaico
+```
+
+A ordem dos arquivos define a prioridade: na sobreposição, o primeiro pixel válido é mantido. A junção exige o mesmo sistema de coordenadas, a mesma resolução e três bandas `uint8`. O resultado mantém pixels pretos válidos e registra a ordem das fontes e o critério de sobreposição nas tags do GeoTIFF.
+
+Para exibir o mosaico junto às observações meteorológicas:
+
+```powershell
+.\.venv\Scripts\python.exe .\src\gerar_mapa.py --data 2024-02-01 --raster $arquivoMosaico
+```
+
+O argumento `--raster` é opcional. A camada prepara uma prévia em Web Mercator, com canal de transparência e maior lado limitado a 1400 pixels. A imagem é incorporada ao HTML. O GeoTIFF original permanece preservado em sua resolução.
+
+Para comparar os contornos das cenas com o limite municipal:
+
+```powershell
+.\.venv\Scripts\python.exe .\src\gerar_mapa.py --data 2024-02-01 --pasta-cenas $pastaConsulta
+```
+
+O argumento `--pasta-cenas` percorre todas as páginas e adiciona somente os contornos das cenas observadas na data escolhida, em UTC. Pode ser combinado com `--raster`.
+
+Cada geração substitui `data/maps/chapeco.html`. Utilize o servidor HTTP descrito anteriormente para abrir o mapa. O controle de camadas permite mostrar ou esconder a imagem, o limite municipal e os contornos adicionados.
 
 ## Tratamento dos dados meteorológicos
 
@@ -202,15 +269,19 @@ Os testes do popup conferem a data, a fonte, as medições e as unidades exibida
 
 Os testes de satélite simulam a paginação HTTP, verificam o envio do corpo de continuação e a gravação das duas respostas, incluindo uma página vazia. Também verificam a normalização de várias cenas, a preservação de zero, o tratamento de páginas vazias e a rejeição de porcentagens fora do intervalo permitido.
 
+O teste do mosaico cria pequenos GeoTIFFs locais para verificar a prioridade na sobreposição, o uso da segunda imagem quando a primeira tem um pixel inválido, a preservação do zero válido, a máscara e a posição geográfica do resultado. A aparência e o alinhamento da camada de satélite também foram conferidos manualmente no navegador.
+
 Os testes usam dados de exemplo e não dependem de consultas às APIs ou de uma conexão com o banco. O GitHub Actions executa a suíte em Linux com Python 3.12.
 
 ## Organização
 
-- `src`: coleta, normalização, carga, consulta e geração do mapa.
+- `src`: coleta, normalização, carga, processamento das imagens, consulta e geração do mapa.
 - `sql`: scripts de criação do banco e das tabelas.
 - `tests`: testes automatizados.
 - `docs`: documentação complementar.
 - `data`: arquivos locais, fora do versionamento.
+
+As miniaturas ficam em `data/previews`, os recortes e mosaicos em `data/processed/sentinel2` e o mapa em `data/maps`.
 
 ## Limitações e próximos passos
 
@@ -220,7 +291,13 @@ O limite municipal é simplificado e serve para a visualização inicial. A vali
 
 A porcentagem de nuvens recebida do catálogo se refere à cena, e não ao polígono de Chapecó. A busca seleciona cenas que intersectam o município; ela não recorta imagens nem garante cobertura completa do município por cada cena. O catálogo atual ainda utiliza um período fixo no código.
 
-As próximas etapas incluem processar e incorporar imagens de satélite ao mapa, adicionar dados do terreno e preparar a execução na AWS.
+A máscara dos recortes considera o polígono e a validade indicada pela imagem de origem. O processamento atual ainda não remove nuvens ou sombras com a classificação SCL.
+
+A seleção das cenas e a correspondência entre a data do mosaico e `--data` são manuais. O gerador não valida a data do GeoTIFF informado. Para reproduzir a comparação, utilize o mesmo limite municipal na consulta e no mapa: o recorte usa o polígono salvo na consulta, enquanto o mapa usa o GeoJSON local mais recente.
+
+A prévia do HTML tem resolução reduzida para exibição e perde detalhes ao ampliar. Os GeoTIFFs mantêm a resolução de origem. A imagem em cores naturais serve para visualização; os próximos indicadores devem utilizar as bandas apropriadas.
+
+As próximas etapas incluem avaliar a qualidade dos pixels, desenvolver indicadores para a vegetação, adicionar dados do terreno e preparar a execução na AWS.
 
 ## Fontes dos dados
 

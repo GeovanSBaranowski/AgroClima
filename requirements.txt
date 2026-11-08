@@ -1,6 +1,9 @@
-﻿branca==0.8.2
+﻿affine==3.0.1
+attrs==26.1.0
+branca==0.8.2
 certifi==2026.10.23
 charset-normalizer==3.5.2
+click==8.5.1
 colorama==0.4.6
 folium==0.20.0
 idna==3.20
@@ -13,8 +16,10 @@ pluggy==1.7.0
 psycopg==3.3.6
 psycopg-binary==3.3.6
 Pygments==2.21.0
+pyparsing==3.3.3
 pytest==9.2.0
 python-dotenv==1.2.4
+rasterio==1.5.2
 requests==2.34.2
 typing_extensions==4.16.0
 tzdata==2026.6
