@@ -25,7 +25,10 @@ O projeto realiza:
 - Inspeção, recorte e mosaico da classificação SCL do Sentinel-2.
 - Contagem das categorias SCL e cálculo de seus percentuais entre os pixels disponíveis.
 - Avaliação da cobertura de dados SCL em relação ao polígono da consulta.
-- Testes automatizados da coleta, da normalização, da validação do limite, do popup, dos mosaicos e da avaliação SCL.
+- Geração de uma máscara de qualidade a partir das categorias SCL.
+- Alinhamento da máscara à grade da imagem colorida por vizinho mais próximo.
+- Aplicação da máscara ao mosaico, preservando as cores e registrando os pixels excluídos na máscara interna.
+- Testes automatizados da coleta, da normalização, da validação do limite, do popup, dos mosaicos, da avaliação SCL e da aplicação da máscara de qualidade.
 - Execução dos testes no GitHub Actions a cada push ou atualização de pull request.
 
 As variáveis coletadas são:
@@ -302,6 +305,63 @@ Cobertura de 100% significa presença de dados SCL em todos os pixels esperados 
 
 O mosaico SCL é utilizado na avaliação numérica. A camada atual do mapa continua esperando uma imagem colorida de três bandas.
 
+## Máscara de qualidade
+
+A regra inicial mantém os códigos SCL 4 (vegetação), 5 (superfície sem vegetação) e 6 (água). As demais categorias são excluídas. A seleção não identifica áreas agrícolas nem garante a ausência de erros na classificação.
+
+Prepare os caminhos dos mosaicos da mesma data, gerados nas etapas anteriores:
+
+```powershell
+$pastaRecortes = ".\data\processed\sentinel2\20261106T001415084591Z"
+$mosaicoScl = Join-Path $pastaRecortes "chapeco_20240201_scl_mosaico.tif"
+$imagemColorida = Join-Path $pastaRecortes "chapeco_20240201_mosaico.tif"
+$mascaraQualidade = Join-Path $pastaRecortes "chapeco_20240201_mascara_qualidade.tif"
+$mascaraAlinhada = Join-Path $pastaRecortes "chapeco_20240201_mascara_qualidade_10m.tif"
+$imagemFiltrada = Join-Path $pastaRecortes "chapeco_20240201_mosaico_filtrado.tif"
+```
+
+Gere a máscara na grade original da SCL:
+
+```powershell
+.\.venv\Scripts\python.exe .\src\mascara_qualidade.py --scl $mosaicoScl --saida $mascaraQualidade
+```
+
+O arquivo grava `1` para manter e `0` para excluir. Uma máscara interna separada informa onde havia dados SCL para tomar a decisão. Assim, zero disponível representa uma exclusão conhecida, enquanto uma posição indisponível representa ausência de classificação. O arquivo utiliza `nodata=None`.
+
+A saída informa quantos pixels com dados foram mantidos ou excluídos e o percentual mantido entre eles. Esse percentual corresponde à regra de seleção, incluindo água.
+
+Alinhe a máscara à imagem colorida:
+
+```powershell
+.\.venv\Scripts\python.exe .\src\alinhar_mascara.py --mascara $mascaraQualidade --referencia $imagemColorida --saida $mascaraAlinhada
+```
+
+O alinhamento utiliza o sistema de coordenadas, a transformação geográfica, a largura e a altura da referência. O método vizinho mais próximo preserva as decisões zero e um. A disponibilidade também considera a máscara interna da imagem de referência.
+
+No exemplo, a grade passa de 20 para 10 metros. Isso permite combinar as posições dos arquivos, mas a informação da classificação continua tendo o detalhe original de 20 metros. O valor 255 é usado apenas durante o cálculo para representar ausência de dados; o arquivo final mantém decisões zero e um e uma máscara interna de disponibilidade.
+
+Aplique a máscara ao mosaico colorido:
+
+```powershell
+.\.venv\Scripts\python.exe .\src\aplicar_mascara.py --imagem $imagemColorida --mascara $mascaraAlinhada --saida $imagemFiltrada
+```
+
+A aplicação exige uma imagem de três bandas `uint8`, uma máscara de uma banda `uint8` com decisões zero ou um e grades iguais em sistema de coordenadas, transformação e dimensões. O resultado mantém apenas posições com imagem disponível, decisão disponível e valor um.
+
+Os valores RGB originais são copiados. A exclusão fica registrada na máscara interna, que precisa ser respeitada pelo leitor. No mapa, os pixels excluídos são apresentados com transparência. Os GeoTIFFs de entrada permanecem preservados.
+
+O resumo distingue pixels mantidos, excluídos pela regra e sem dados de qualidade, considerando somente as posições com imagem disponível. O percentual mantido é calculado nessa base. As contagens da grade de 10 metros podem diferir das contagens anteriores da SCL de 20 metros. Um resultado com todos os pixels excluídos também pode ser gravado.
+
+Os arquivos de saída precisam ser diferentes das entradas. As etapas registram os caminhos de origem, a regra de seleção e as referências de alinhamento nas tags dos GeoTIFFs correspondentes.
+
+Gere o mapa com o resultado filtrado:
+
+```powershell
+.\.venv\Scripts\python.exe .\src\gerar_mapa.py --data 2024-02-01 --raster $imagemFiltrada
+```
+
+Atualize o mapa pelo servidor HTTP descrito anteriormente. A seleção pela SCL torna pixels indisponíveis; ela não reconstrói o terreno encoberto por nuvens.
+
 ## Tratamento dos dados meteorológicos
 
 Cada registro representa uma variável meteorológica em uma data e localização. As unidades recebidas são validadas antes da carga.
@@ -330,6 +390,8 @@ O teste do mosaico cria pequenos GeoTIFFs locais, com uma e três bandas, para v
 
 Os testes da avaliação SCL verificam a contagem das categorias, a exclusão de pixels mascarados e do código zero, a rejeição de códigos desconhecidos e a ausência de classificação. Também verificam cobertura completa, arquivo com extensão parcial, pixels sem dados ou mascarados, nuvens contadas como dados existentes e buracos no polígono.
 
+Os testes da máscara de qualidade verificam as categorias mantidas, a disponibilidade dos pixels e a distinção entre exclusão conhecida e ausência de dados na gravação. O alinhamento é verificado com grades deslocadas, resolução diferente e pixels indisponíveis na origem e na referência. A aplicação verifica a preservação das cores, incluindo preto válido, a rejeição de uma máscara deslocada, as contagens e um resultado com todos os pixels excluídos. O alinhamento do resultado real também foi conferido manualmente no mapa.
+
 Os testes usam dados de exemplo e não dependem de consultas às APIs ou de uma conexão com o banco. O GitHub Actions executa a suíte em Linux com Python 3.12.
 
 ## Organização
@@ -340,7 +402,7 @@ Os testes usam dados de exemplo e não dependem de consultas às APIs ou de uma 
 - `docs`: documentação complementar.
 - `data`: arquivos locais, fora do versionamento.
 
-As miniaturas ficam em `data/previews`, os recortes e mosaicos em `data/processed/sentinel2` e o mapa em `data/maps`.
+As miniaturas ficam em `data/previews`, os recortes, mosaicos, máscaras de qualidade e imagens filtradas em `data/processed/sentinel2` e o mapa em `data/maps`.
 
 ## Limitações e próximos passos
 
@@ -350,13 +412,13 @@ O limite municipal é simplificado e serve para a visualização inicial. A vali
 
 A porcentagem de nuvens recebida do catálogo se refere à cena, e não ao polígono de Chapecó. A busca seleciona cenas que intersectam o município; ela não recorta imagens nem garante cobertura completa do município por cada cena. O catálogo atual ainda utiliza um período fixo no código.
 
-A máscara dos recortes considera o polígono e a validade indicada pela imagem de origem. O processamento atual ainda não remove nuvens ou sombras com a classificação SCL.
+A máscara dos recortes considera o polígono e a validade indicada pela imagem de origem. O filtro de qualidade SCL é aplicado pelos scripts de geração, alinhamento e aplicação da máscara. A regra atual mantém vegetação, superfície sem vegetação e água, excluindo as demais categorias. A SCL pode apresentar erros; a seleção não representa uma validação agronômica.
 
-A seleção das cenas e a correspondência entre a data do mosaico e `--data` são manuais. O gerador não valida a data do GeoTIFF informado. Para reproduzir a comparação, utilize o mesmo limite municipal na consulta e no mapa: o recorte usa o polígono salvo na consulta, enquanto o mapa usa o GeoJSON local mais recente.
+A seleção das cenas e a correspondência entre a data do mosaico e `--data` são manuais. A correspondência entre a data da SCL e a imagem também precisa ser garantida pelo usuário; as verificações de grade não validam a data de aquisição. O gerador não valida a data do GeoTIFF informado. Para reproduzir a comparação, utilize o mesmo limite municipal na consulta e no mapa: o recorte usa o polígono salvo na consulta, enquanto o mapa usa o GeoJSON local mais recente.
 
 A prévia do HTML tem resolução reduzida para exibição e perde detalhes ao ampliar. Os GeoTIFFs mantêm a resolução de origem. A imagem em cores naturais serve para visualização; os próximos indicadores devem utilizar as bandas apropriadas.
 
-As próximas etapas incluem aplicar critérios de qualidade para excluir pixels de nuvens e sombras, desenvolver indicadores para a vegetação, adicionar dados do terreno e preparar a execução na AWS.
+As próximas etapas incluem obter as bandas apropriadas para desenvolver indicadores de vegetação, adicionar dados do terreno, automatizar o processamento e preparar a execução na AWS.
 
 ## Fontes dos dados
 
@@ -364,4 +426,5 @@ As próximas etapas incluem aplicar critérios de qualidade para excluir pixels 
 - [IBGE — documentação da API de malhas](https://servicodados.ibge.gov.br/api/docs/malhas?versao=4)
 - [Earth Search — documentação do catálogo](https://github.com/Element84/earth-search)
 - [Copernicus — processamento e categorias SCL](https://sentiwiki.copernicus.eu/web/s2-processing)
+- [Rasterio — máscaras de disponibilidade](https://rasterio.readthedocs.io/en/stable/topics/masks.html)
 - [OpenStreetMap — dados e atribuição](https://www.openstreetmap.org/copyright)
