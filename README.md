@@ -22,6 +22,7 @@ O projeto realiza:
 - Download de miniaturas e inspeção de metadados dos GeoTIFFs remotos.
 - Recorte das imagens pelo polígono da consulta e montagem de mosaicos com máscara de validade.
 - Exibição do mosaico no mapa, com transparência fora do recorte e controle de camadas.
+- Cálculo de NDVI por cena, mosaico com máscara de qualidade e visualização com legenda.
 - Inspeção, recorte e mosaico da classificação SCL do Sentinel-2.
 - Contagem das categorias SCL e cálculo de seus percentuais entre os pixels disponíveis.
 - Avaliação da cobertura de dados SCL em relação ao polígono da consulta.
@@ -272,7 +273,7 @@ Inspecione a classificação e recorte as duas cenas:
 .\.venv\Scripts\python.exe .\src\recortar_cena.py --pagina $paginaSatelite --id-cena $idCenaNorte --asset scl
 ```
 
-O argumento `--asset` aceita `visual` ou `scl`. Quando omitido, utiliza `visual`. Os recortes SCL recebem o final `_scl_chapeco.tif`, preservando os arquivos coloridos.
+O argumento `--asset` aceita `visual`, `scl`, `red` ou `nir`. Quando omitido, utiliza `visual`. Os recortes SCL recebem o final `_scl_chapeco.tif`, preservando os arquivos coloridos.
 
 Monte um mosaico da classificação na mesma ordem utilizada para as imagens coloridas:
 
@@ -303,7 +304,7 @@ O argumento opcional `--consulta` permite comparar os pixels com dados SCL aos p
 
 Cobertura de 100% significa presença de dados SCL em todos os pixels esperados para esse polígono e essa grade. Pixels classificados como nuvens ou sombras também contam como dados existentes. A cobertura não mede a porcentagem de pixels adequados a uma análise agrícola.
 
-O mosaico SCL é utilizado na avaliação numérica. A camada atual do mapa continua esperando uma imagem colorida de três bandas.
+O mosaico SCL é utilizado na avaliação numérica. O mapa também pode exibir o mosaico de NDVI descrito a seguir.
 
 ## Máscara de qualidade
 
@@ -362,6 +363,78 @@ Gere o mapa com o resultado filtrado:
 
 Atualize o mapa pelo servidor HTTP descrito anteriormente. A seleção pela SCL torna pixels indisponíveis; ela não reconstrói o terreno encoberto por nuvens.
 
+## NDVI
+
+O NDVI é calculado a partir das bandas vermelha (`red`, B04) e infravermelha próxima (`nir`, B08) do Sentinel-2: `(nir - red) / (nir + red)`. Os valores de cada banda são convertidos para reflectância com a escala e o deslocamento dos seus metadados STAC. Valores ausentes e pixels mascarados são excluídos; um zero válido é preservado. Uma soma igual a zero não produz NDVI válido.
+
+O exemplo usa as duas cenas de 1 de fevereiro de 2024 e pressupõe uma consulta existente, com `consulta.json`, e os recortes SCL criados na seção anterior. Substitua a pasta pela da sua consulta:
+
+```powershell
+$pastaConsulta = ".\data\raw\earth_search\20261106T001415084591Z"
+$paginaSatelite = Join-Path $pastaConsulta "pagina_001.json"
+$pastaRecortes = Join-Path ".\data\processed\sentinel2" (Split-Path $pastaConsulta -Leaf)
+$idCenaSul = "S2A_T22JCQ_20240201T133141_L2A"
+$idCenaNorte = "S2A_T22JCR_20240201T133141_L2A"
+```
+
+Inspecione os metadados e recorte as duas bandas de cada cena:
+
+```powershell
+.\.venv\Scripts\python.exe .\src\metadados_espectrais.py --pagina $paginaSatelite --id-cena $idCenaSul --asset red
+.\.venv\Scripts\python.exe .\src\metadados_espectrais.py --pagina $paginaSatelite --id-cena $idCenaSul --asset nir
+foreach ($cena in @($idCenaSul, $idCenaNorte)) {
+    foreach ($banda in @('red', 'nir')) {
+        .\.venv\Scripts\python.exe .\src\recortar_cena.py --pagina $paginaSatelite --id-cena $cena --asset $banda
+    }
+}
+```
+
+Os recortes espectrais preservam a máscara interna e registram a cena, a banda e os metadados de escala, deslocamento e ausência de dados nas tags. O cálculo lê os ajustes de cada banda na página STAC indicada.
+
+Gere uma máscara de qualidade para cada cena, alinhe-a à respectiva banda vermelha e salve o NDVI:
+
+```powershell
+foreach ($cena in @($idCenaSul, $idCenaNorte)) {
+    $scl = Join-Path $pastaRecortes "${cena}_scl_chapeco.tif"
+    $red = Join-Path $pastaRecortes "${cena}_red_chapeco.tif"
+    $nir = Join-Path $pastaRecortes "${cena}_nir_chapeco.tif"
+    $mascara = Join-Path $pastaRecortes "${cena}_mascara_qualidade.tif"
+    $mascara10m = Join-Path $pastaRecortes "${cena}_mascara_qualidade_10m.tif"
+    $ndvi = Join-Path $pastaRecortes "${cena}_ndvi.tif"
+
+    .\.venv\Scripts\python.exe .\src\mascara_qualidade.py --scl $scl --saida $mascara
+    .\.venv\Scripts\python.exe .\src\alinhar_mascara.py --mascara $mascara --referencia $red --saida $mascara10m
+    .\.venv\Scripts\python.exe .\src\inspecionar_ndvi.py --pagina $paginaSatelite --id-cena $cena --red $red --nir $nir --mascara $mascara10m --saida $ndvi
+}
+```
+
+O cálculo verifica se as bandas pertencem à mesma cena e têm a mesma grade. A máscara mantém as classes SCL 4, 5 e 6. Seu alinhamento não aumenta o detalhe original da SCL, de 20 metros. O usuário deve assegurar que a máscara corresponda à cena: a grade é verificada, mas sua origem ainda não é validada automaticamente. A saída é um GeoTIFF `float32` com máscara interna e identificação da cena.
+
+Monte o mosaico e avalie sua cobertura dentro do polígono:
+
+```powershell
+$ndviSul = Join-Path $pastaRecortes "${idCenaSul}_ndvi.tif"
+$ndviNorte = Join-Path $pastaRecortes "${idCenaNorte}_ndvi.tif"
+$mosaicoNdvi = Join-Path $pastaRecortes "chapeco_20240201_ndvi_mosaico.tif"
+$consultaSatelite = Join-Path $pastaConsulta "consulta.json"
+
+.\.venv\Scripts\python.exe .\src\montar_mosaico_ndvi.py --arquivos $ndviSul $ndviNorte --saida $mosaicoNdvi
+.\.venv\Scripts\python.exe .\src\avaliar_mosaico_ndvi.py --raster $mosaicoNdvi --consulta $consultaSatelite
+```
+
+Na sobreposição, o mosaico utiliza o primeiro pixel válido conforme a ordem informada; não escolhe automaticamente a cena de melhor qualidade. Os arquivos de origem e sua ordem são registrados nas tags. A cobertura considera os pixels válidos após o filtro e o polígono da consulta, inclusive áreas fora da extensão do raster.
+
+Para exibir o NDVI junto à imagem colorida e aos dados meteorológicos:
+
+```powershell
+$imagemColorida = Join-Path $pastaRecortes "chapeco_20240201_mosaico.tif"
+.\.venv\Scripts\python.exe .\src\gerar_mapa.py --data 2024-02-01 --raster $imagemColorida --ndvi $mosaicoNdvi
+```
+
+Abra o mapa pelo servidor HTTP descrito acima. A legenda mostra faixas escolhidas para visualização; valores fora de `[-1, 1]` aparecem em roxo. A legenda permanece visível quando a camada é desligada. A imagem exibida é uma prévia reduzida; o GeoTIFF conserva seus valores e sua grade.
+
+O NDVI indica uma relação entre as reflectâncias, não identifica por si só lavouras nem diagnostica sua saúde. Reflectâncias negativas podem gerar valores de NDVI fora de `[-1, 1]`; esses valores são mantidos e informados para investigação. A SCL pode apresentar erros. A verificação das datas das cenas, do mosaico e das observações exibidas ainda é manual.
+
 ## Tratamento dos dados meteorológicos
 
 Cada registro representa uma variável meteorológica em uma data e localização. As unidades recebidas são validadas antes da carga.
@@ -418,7 +491,7 @@ A seleção das cenas e a correspondência entre a data do mosaico e `--data` s�
 
 A prévia do HTML tem resolução reduzida para exibição e perde detalhes ao ampliar. Os GeoTIFFs mantêm a resolução de origem. A imagem em cores naturais serve para visualização; os próximos indicadores devem utilizar as bandas apropriadas.
 
-As próximas etapas incluem obter as bandas apropriadas para desenvolver indicadores de vegetação, adicionar dados do terreno, automatizar o processamento e preparar a execução na AWS.
+As próximas etapas incluem melhorar a rastreabilidade e a automação do processamento, adicionar dados do terreno e preparar a execução na AWS.
 
 ## Fontes dos dados
 
