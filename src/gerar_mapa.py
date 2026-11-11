@@ -9,6 +9,7 @@ import folium
 import psycopg
 from dotenv import load_dotenv
 
+from camada_ndvi import adicionar_camada_ndvi
 from camada_satelite import adicionar_camada_satelite
 from coletar_limite import validar_limite
 from configuracao import LATITUDE_REFERENCIA, LONGITUDE_REFERENCIA
@@ -65,7 +66,7 @@ def adicionar_contornos_cenas(mapa, dados_catalogo, data_observacao):
             cena["properties"]["datetime"]
         )
 
-        data_cena = instante.astimezone(timezone.utc).date()
+        data_cena = instante.astimezone(timezone.utc).date()  # noqa: UP017
 
         if data_cena != data_observacao:
             continue
@@ -113,6 +114,12 @@ if __name__ == "__main__":
         "--raster",
         type=Path,
         help="GeoTIFF que sera exibido no mapa",
+    )
+
+    parser.add_argument(
+        "--ndvi",
+        type=Path,
+        help="GeoTIFF de NDVI que sera exibido no mapa",
     )
 
     argumentos = parser.parse_args()
@@ -180,6 +187,48 @@ if __name__ == "__main__":
 
         print(f"Imagem utilizada: {arquivo_raster}")
 
+    if argumentos.ndvi is not None:
+        arquivo_ndvi = (
+            raiz_projeto / argumentos.ndvi
+        ).resolve()
+
+        adicionar_camada_ndvi(
+            mapa,
+            arquivo_ndvi,
+        )
+
+        print(f"NDVI utilizado: {arquivo_ndvi}")
+
+        legenda_ndvi = """
+        <div style="
+            position: fixed;
+            bottom: 35px;
+            left: 20px;
+            z-index: 9999;
+            background: white;
+            padding: 10px 12px;
+            border: 1px solid #777;
+            border-radius: 4px;
+            font-size: 13px;
+        ">
+            <strong>NDVI Sentinel-2</strong><br>
+            <span style="color: #2d6eb4;">&#9632;</span>
+            -1 a menos de 0<br>
+            <span style="color: #dcc8a0;">&#9632;</span>
+            0 a menos de 0,2<br>
+            <span style="color: #96c850;">&#9632;</span>
+            0,2 a menos de 0,5<br>
+            <span style="color: #1e7837;">&#9632;</span>
+            0,5 a 1<br>
+            <span style="color: #963caa;">&#9632;</span>
+            Fora de [-1, 1]
+        </div>
+        """
+
+        mapa.get_root().html.add_child(
+            folium.Element(legenda_ndvi)
+        )
+        
     limite = folium.GeoJson(
         data=dados,
         name="Limite municipal de Chapeco",

@@ -5,12 +5,16 @@ from pathlib import Path
 import rasterio
 
 
-def obter_url_asset(dados, id_cena, asset):
+def obter_asset(dados, id_cena, asset):
     for cena in dados["features"]:
         if cena["id"] == id_cena:
-            return cena["assets"][asset]["href"]
+            return cena["assets"][asset]
 
     raise ValueError(f"Cena nao encontrada nesta pagina: {id_cena}")
+
+
+def obter_url_asset(dados, id_cena, asset):
+    return obter_asset(dados, id_cena, asset)["href"]
 
 
 def obter_url_visual(dados, id_cena):
@@ -58,9 +62,9 @@ if __name__ == "__main__":
 
     parser.add_argument(
         "--asset",
-        choices=["visual", "scl"],
+        choices=["visual", "scl", "red", "nir"],
         default="visual",
-        help="Arquivo da cena a inspecionar: visual ou scl",
+        help="Arquivo a inspecionar: visual, scl, red ou nir",
     )
 
     argumentos = parser.parse_args()
