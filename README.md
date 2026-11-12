@@ -23,6 +23,7 @@ O projeto realiza:
 - Recorte das imagens pelo polígono da consulta e montagem de mosaicos com máscara de validade.
 - Exibição do mosaico no mapa, com transparência fora do recorte e controle de camadas.
 - Cálculo de NDVI por cena, mosaico com máscara de qualidade e visualização com legenda.
+- Consulta e mosaico de elevação da superfície, cálculo de inclinação e visualização no mapa.
 - Inspeção, recorte e mosaico da classificação SCL do Sentinel-2.
 - Contagem das categorias SCL e cálculo de seus percentuais entre os pixels disponíveis.
 - Avaliação da cobertura de dados SCL em relação ao polígono da consulta.
@@ -435,6 +436,70 @@ Abra o mapa pelo servidor HTTP descrito acima. A legenda mostra faixas escolhida
 
 O NDVI indica uma relação entre as reflectâncias, não identifica por si só lavouras nem diagnostica sua saúde. Reflectâncias negativas podem gerar valores de NDVI fora de `[-1, 1]`; esses valores são mantidos e informados para investigação. A SCL pode apresentar erros. A verificação das datas das cenas, do mosaico e das observações exibidas ainda é manual.
 
+## Elevação e inclinação da superfície
+
+O projeto consulta a coleção `cop-dem-glo-30` pelo Earth Search e obtém dados do Copernicus DEM disponíveis na AWS. O produto é um modelo digital de superfície: pode incluir vegetação e construções. A resolução espacial de origem é aproximadamente 30 metros. Elevação não identifica o tipo ou a umidade do solo.
+
+Consulte a área usando o polígono de uma consulta Sentinel-2 existente:
+
+```powershell
+$consultaSatelite = ".\data\raw\earth_search\20261106T001415084591Z\consulta.json"
+.\.venv\Scripts\python.exe .\src\consultar_elevacao.py --consulta $consultaSatelite
+```
+
+O programa salva os critérios e as páginas originais em uma nova pasta de `data/raw/copernicus_dem`. Ajuste o identificador abaixo para o da sua execução. Os itens deste exemplo foram encontrados na primeira página:
+
+```powershell
+$pastaConsultaElevacao = ".\data\raw\copernicus_dem\20261111T002755596384Z"
+$paginaElevacao = Join-Path $pastaConsultaElevacao "pagina_001.json"
+$consultaElevacao = Join-Path $pastaConsultaElevacao "consulta.json"
+$pastaElevacao = ".\data\processed\copernicus_dem\20261111T002755596384Z"
+$idSul = "Copernicus_DSM_COG_10_S28_00_W053_00_DEM"
+$idNorte = "Copernicus_DSM_COG_10_S27_00_W053_00_DEM"
+$sul = Join-Path $pastaElevacao "chapeco_elevacao_sul.tif"
+$norte = Join-Path $pastaElevacao "chapeco_elevacao_norte.tif"
+$mosaico = Join-Path $pastaElevacao "chapeco_elevacao_mosaico.tif"
+$utm = Join-Path $pastaElevacao "chapeco_elevacao_utm.tif"
+$inclinacao = Join-Path $pastaElevacao "chapeco_inclinacao_graus.tif"
+```
+
+Inspecione os arquivos e recorte os dois itens pelo polígono da consulta:
+
+```powershell
+.\.venv\Scripts\python.exe .\src\inspecionar_elevacao.py --pagina $paginaElevacao
+.\.venv\Scripts\python.exe .\src\recortar_elevacao.py --pagina $paginaElevacao --id-item $idSul --saida $sul
+.\.venv\Scripts\python.exe .\src\recortar_elevacao.py --pagina $paginaElevacao --id-item $idNorte --saida $norte
+```
+
+Os arquivos de saída devem ser novos: os scripts de recorte recusam sobrescrever um arquivo existente. Para repetir o processamento, escolha outros nomes. Os recortes preservam uma máscara interna e registram a origem nas tags.
+
+Monte o mosaico e avalie a cobertura:
+
+```powershell
+.\.venv\Scripts\python.exe .\src\montar_mosaico_elevacao.py --arquivos $sul $norte --saida $mosaico
+.\.venv\Scripts\python.exe .\src\avaliar_elevacao.py --raster $mosaico --consulta $consultaElevacao
+```
+
+Na sobreposição, vale o primeiro pixel válido conforme a ordem dos arquivos. A cobertura compara a máscara e os valores finitos aos pixels esperados no polígono; ela não mede a precisão da elevação.
+
+Reprojete o mosaico e calcule a inclinação:
+
+```powershell
+.\.venv\Scripts\python.exe .\src\inspecionar_grade_elevacao.py --raster $mosaico
+.\.venv\Scripts\python.exe .\src\reprojetar_elevacao.py --origem $mosaico --saida $utm
+.\.venv\Scripts\python.exe .\src\gerar_inclinacao.py --elevacao $utm --saida $inclinacao
+```
+
+A reprojeção usa EPSG:32722 e interpolação bilinear. A inclinação é calculada em graus por diferenças centrais, com os quatro vizinhos cardinais. A borda e as posições próximas a dados ausentes ficam mascaradas quando não há vizinhos suficientes. Como a elevação é recortada antes do cálculo, parte dessas posições pode ser consequência do recorte. A mudança de grade não aumenta a precisão da fonte.
+
+Para adicionar as camadas ao mapa, informe os arquivos gerados:
+
+```powershell
+.\.venv\Scripts\python.exe .\src\gerar_mapa.py --data 2024-02-01 --elevacao $mosaico --inclinacao $inclinacao
+```
+
+Os argumentos também podem ser combinados com `--raster` e `--ndvi`. As faixas das legendas servem à visualização, não à classificação de aptidão agrícola. As legendas permanecem visíveis quando suas camadas são desligadas; em áreas transparentes, uma camada inferior pode aparecer.
+
 ## Tratamento dos dados meteorológicos
 
 Cada registro representa uma variável meteorológica em uma data e localização. As unidades recebidas são validadas antes da carga.
@@ -491,13 +556,14 @@ A seleção das cenas e a correspondência entre a data do mosaico e `--data` s�
 
 A prévia do HTML tem resolução reduzida para exibição e perde detalhes ao ampliar. Os GeoTIFFs mantêm a resolução de origem. A imagem em cores naturais serve para visualização; os próximos indicadores devem utilizar as bandas apropriadas.
 
-As próximas etapas incluem melhorar a rastreabilidade e a automação do processamento, adicionar dados do terreno e preparar a execução na AWS.
+As próximas etapas incluem pesquisar dados de solo, melhorar a rastreabilidade e a automação do processamento e preparar a execução na AWS.
 
 ## Fontes dos dados
 
 - [NASA POWER — documentação da API diária](https://power.larc.nasa.gov/docs/services/api/temporal/daily/)
 - [IBGE — documentação da API de malhas](https://servicodados.ibge.gov.br/api/docs/malhas?versao=4)
 - [Earth Search — documentação do catálogo](https://github.com/Element84/earth-search)
+- [AWS Open Data — Copernicus DEM](https://registry.opendata.aws/copernicus-dem/)
 - [Copernicus — processamento e categorias SCL](https://sentiwiki.copernicus.eu/web/s2-processing)
 - [Rasterio — máscaras de disponibilidade](https://rasterio.readthedocs.io/en/stable/topics/masks.html)
 - [OpenStreetMap — dados e atribuição](https://www.openstreetmap.org/copyright)
