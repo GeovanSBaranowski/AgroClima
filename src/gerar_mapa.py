@@ -9,6 +9,8 @@ import folium
 import psycopg
 from dotenv import load_dotenv
 
+from camada_elevacao import adicionar_camada_elevacao
+from camada_inclinacao import adicionar_camada_inclinacao
 from camada_ndvi import adicionar_camada_ndvi
 from camada_satelite import adicionar_camada_satelite
 from coletar_limite import validar_limite
@@ -122,6 +124,18 @@ if __name__ == "__main__":
         help="GeoTIFF de NDVI que sera exibido no mapa",
     )
 
+    parser.add_argument(
+        "--elevacao",
+        type=Path,
+        help="GeoTIFF de elevacao que sera exibido no mapa",
+    )
+
+    parser.add_argument(
+        "--inclinacao",
+        type=Path,
+        help="GeoTIFF de inclinacao em graus",
+    )
+
     argumentos = parser.parse_args()
 
     raiz_projeto = Path(__file__).resolve().parent.parent
@@ -228,7 +242,93 @@ if __name__ == "__main__":
         mapa.get_root().html.add_child(
             folium.Element(legenda_ndvi)
         )
-        
+
+    if argumentos.elevacao is not None:
+        arquivo_elevacao = (
+            raiz_projeto / argumentos.elevacao
+        ).resolve()
+
+        adicionar_camada_elevacao(
+            mapa,
+            arquivo_elevacao,
+        )
+
+        print(f"Elevacao utilizada: {arquivo_elevacao}")
+
+        legenda_elevacao = """
+        <div style="
+            position: fixed;
+            bottom: 190px;
+            left: 20px;
+            z-index: 9999;
+            background: white;
+            padding: 10px 12px;
+            border: 1px solid #777;
+            border-radius: 4px;
+            font-size: 13px;
+        ">
+            <strong>Elevacao da superficie (m)</strong><br>
+            <span style="color: #28784b;">&#9632;</span>
+            Menos de 400<br>
+            <span style="color: #96be5f;">&#9632;</span>
+            400 a menos de 500<br>
+            <span style="color: #ebd77d;">&#9632;</span>
+            500 a menos de 600<br>
+            <span style="color: #d7914b;">&#9632;</span>
+            600 a menos de 700<br>
+            <span style="color: #875037;">&#9632;</span>
+            700 ou mais
+        </div>
+        """
+
+        mapa.get_root().html.add_child(
+            folium.Element(legenda_elevacao)
+        )
+
+    if argumentos.inclinacao is not None:
+        arquivo_inclinacao = (
+            raiz_projeto / argumentos.inclinacao
+        ).resolve()
+
+        adicionar_camada_inclinacao(
+            mapa,
+            arquivo_inclinacao,
+        )
+
+        print(f"Inclinacao utilizada: {arquivo_inclinacao}")
+
+        legenda_inclinacao = """
+        <div style="
+            position: fixed;
+            bottom: 345px;
+            left: 20px;
+            z-index: 9999;
+            background: white;
+            padding: 10px 12px;
+            border: 1px solid #777;
+            border-radius: 4px;
+            font-size: 13px;
+        ">
+            <strong>Inclinacao (graus)</strong><br>
+            <span style="color: #28784b;">&#9632;</span>
+            0 a menos de 5<br>
+            <span style="color: #96be5f;">&#9632;</span>
+            5 a menos de 10<br>
+            <span style="color: #ebd77d;">&#9632;</span>
+            10 a menos de 20<br>
+            <span style="color: #d7914b;">&#9632;</span>
+            20 a menos de 30<br>
+            <span style="color: #b93c32;">&#9632;</span>
+            30 a menos de 90<br>
+            <span style="color: #963caa;">&#9632;</span>
+            Fora do intervalo
+        </div>
+        """
+
+        mapa.get_root().html.add_child(
+            folium.Element(legenda_inclinacao)
+        )
+    
     limite = folium.GeoJson(
         data=dados,
         name="Limite municipal de Chapeco",
