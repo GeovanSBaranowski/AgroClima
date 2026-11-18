@@ -24,6 +24,7 @@ O projeto realiza:
 - Exibição do mosaico no mapa, com transparência fora do recorte e controle de camadas.
 - Cálculo de NDVI por cena, mosaico com máscara de qualidade e visualização com legenda.
 - Consulta e mosaico de elevação da superfície, cálculo de inclinação e visualização no mapa.
+- Inspeção e visualização de unidades de solo do IBGE com legenda e popup.
 - Inspeção, recorte e mosaico da classificação SCL do Sentinel-2.
 - Contagem das categorias SCL e cálculo de seus percentuais entre os pixels disponíveis.
 - Avaliação da cobertura de dados SCL em relação ao polígono da consulta.
@@ -55,6 +56,7 @@ As coordenadas usadas no coletor meteorológico, na consulta ao banco e no mapa 
 - Folium
 - NumPy
 - Rasterio
+- GeoPandas e Pyogrio
 - pytest
 - Git
 - GitHub Actions
@@ -500,6 +502,38 @@ Para adicionar as camadas ao mapa, informe os arquivos gerados:
 
 Os argumentos também podem ser combinados com `--raster` e `--ndvi`. As faixas das legendas servem à visualização, não à classificação de aptidão agrícola. As legendas permanecem visíveis quando suas camadas são desligadas; em áreas transparentes, uma camada inferior pode aparecer.
 
+## Unidades de solo de Chapecó
+
+O projeto visualiza o recorte de pedologia do IBGE para Chapecó, código 4204202. A camada contém unidades de mapeamento e outras categorias, como área urbana e corpo d'água. A cor utiliza o campo `leg_ordem`; o popup apresenta categoria, legenda, número de componentes e textura quando informados. Uma unidade pode conter solos dominantes, subdominantes e inclusões: sua categoria não descreve necessariamente todo ponto do polígono.
+
+O recorte usado no desenvolvimento foi exportado manualmente pelo [BDiA Web](https://bdiaweb.ibge.gov.br/), no tema Pedologia, com recorte por município: Santa Catarina, Chapecó. Em Exportar, selecione Dados Vetoriais e Solos - Área - Chapecó. Guarde o ZIP obtido em:
+
+```text
+data/raw/ibge_pedologia/chapeco_bdia/pedo_area_mu_4204202.zip
+```
+
+O arquivo contém os componentes do Shapefile, incluindo `.shp`, `.shx`, `.dbf`, `.prj` e `.cpg`; mantenha-os juntos. A exportação e a versão publicada podem mudar, portanto registre a data e a versão consultadas para reproduzir uma análise. O arquivo fica em `data/` e não é versionado.
+
+Para inspecionar o conteúdo e validar a preparação das geometrias:
+
+```powershell
+$arquivoSolo = ".\data\raw\ibge_pedologia\chapeco_bdia\pedo_area_mu_4204202.zip"
+.\.venv\Scripts\python.exe .\src\inspecionar_solo.py --arquivo $arquivoSolo
+.\.venv\Scripts\python.exe .\src\preparar_solo.py --arquivo $arquivoSolo
+```
+
+O recorte examinado tinha 24 polígonos em EPSG:4674. Para a visualização, as geometrias são verificadas e transformadas para EPSG:4326; o ZIP original permanece preservado. A camada inicia desligada no controle do mapa. As cores são escolhas de visualização, não representam fertilidade ou aptidão agrícola. A legenda de solo é recolhível e permanece disponível quando a camada é desligada.
+
+Gere o mapa com os dados de solo e, se desejar, acrescente os argumentos opcionais `--raster`, `--ndvi`, `--elevacao` e `--inclinacao` descritos nas seções anteriores:
+
+```powershell
+.\.venv\Scripts\python.exe .\src\gerar_mapa.py --data 2024-02-01 --solo $arquivoSolo
+```
+
+O limite municipal usado pelo mapa é simplificado e não coincide completamente com o contorno do recorte de solo do BDiA. Uma comparação também foi feita com um limite de qualidade máxima obtido pela API de malhas; diferenças persistiram. Os dados originais foram preservados e a causa dessas diferenças ainda precisa ser investigada. O mapa de comparação usa `src/comparar_limites_solo.py` para medir as diferenças e `src/mapa_diferencas_solo.py` para mostrá-las; o caminho dos arquivos de entrada deve ser informado na execução.
+
+O IBGE informa que, embora a base cartográfica de pedologia seja apresentada na escala 1:250.000, o conteúdo temático associado à quantidade de pontos amostrais corresponde a um levantamento em 1:1.000.000. O recorte é regional e não substitui levantamento detalhado ou análise de solo de uma propriedade. As camadas são apresentadas juntas para exploração, sem validação agronômica.
+
 ## Tratamento dos dados meteorológicos
 
 Cada registro representa uma variável meteorológica em uma data e localização. As unidades recebidas são validadas antes da carga.
@@ -556,12 +590,13 @@ A seleção das cenas e a correspondência entre a data do mosaico e `--data` s�
 
 A prévia do HTML tem resolução reduzida para exibição e perde detalhes ao ampliar. Os GeoTIFFs mantêm a resolução de origem. A imagem em cores naturais serve para visualização; os próximos indicadores devem utilizar as bandas apropriadas.
 
-As próximas etapas incluem pesquisar dados de solo, melhorar a rastreabilidade e a automação do processamento e preparar a execução na AWS.
+As próximas etapas incluem aprofundar a investigação das diferenças entre limites, melhorar a rastreabilidade e a automação do processamento e preparar a execução na AWS.
 
 ## Fontes dos dados
 
 - [NASA POWER — documentação da API diária](https://power.larc.nasa.gov/docs/services/api/temporal/daily/)
 - [IBGE — documentação da API de malhas](https://servicodados.ibge.gov.br/api/docs/malhas?versao=4)
+- [IBGE — BDiA, sobre pedologia](https://bdiaweb.ibge.gov.br/#/sobre/pedologia)
 - [Earth Search — documentação do catálogo](https://github.com/Element84/earth-search)
 - [AWS Open Data — Copernicus DEM](https://registry.opendata.aws/copernicus-dem/)
 - [Copernicus — processamento e categorias SCL](https://sentiwiki.copernicus.eu/web/s2-processing)
