@@ -6,6 +6,7 @@ from html import escape
 from pathlib import Path
 
 import folium
+import geopandas as gpd
 import psycopg
 from dotenv import load_dotenv
 
@@ -13,6 +14,11 @@ from camada_elevacao import adicionar_camada_elevacao
 from camada_inclinacao import adicionar_camada_inclinacao
 from camada_ndvi import adicionar_camada_ndvi
 from camada_satelite import adicionar_camada_satelite
+from camada_solo import (
+    COR_NAO_IDENTIFICADA,
+    CORES_SOLO,
+    adicionar_camada_solo,
+)
 from coletar_limite import validar_limite
 from configuracao import LATITUDE_REFERENCIA, LONGITUDE_REFERENCIA
 from consultar_clima import consultar_observacoes
@@ -134,6 +140,12 @@ if __name__ == "__main__":
         "--inclinacao",
         type=Path,
         help="GeoTIFF de inclinacao em graus",
+    )
+
+    parser.add_argument(
+        "--solo",
+        type=Path,
+        help="Arquivo vetorial das unidades de solo",
     )
 
     argumentos = parser.parse_args()
@@ -328,6 +340,57 @@ if __name__ == "__main__":
         mapa.get_root().html.add_child(
             folium.Element(legenda_inclinacao)
         )
+
+    if argumentos.solo is not None:
+        arquivo_solo = (
+            raiz_projeto / argumentos.solo
+        ).resolve()
+
+        solos = gpd.read_file(arquivo_solo)
+
+        adicionar_camada_solo(
+            mapa,
+            solos,
+        )
+
+        itens_legenda = []
+
+        for categoria, cor in CORES_SOLO.items():
+            itens_legenda.append(
+                f'<span style="color: {cor};">&#9632;</span> '
+                f'{escape(categoria)}<br>'
+            )
+
+        itens_legenda.append(
+            f'<span style="color: {COR_NAO_IDENTIFICADA};">'
+            "&#9632;</span> Categoria nao identificada<br>"
+        )
+
+        conteudo_legenda = "".join(itens_legenda)
+
+        legenda_solo = f"""
+        <details style="
+            position: fixed;
+            bottom: 35px;
+            right: 20px;
+            z-index: 9999;
+            background: white;
+            padding: 10px 12px;
+            border: 1px solid #777;
+            border-radius: 4px;
+            font-size: 13px;
+        ">
+            <summary>Unidades de solo — IBGE</summary>
+            {conteudo_legenda}
+        </details>
+        """
+
+        mapa.get_root().html.add_child(
+            folium.Element(legenda_solo)
+        )
+
+        print(f"Solo utilizado: {arquivo_solo}")
+        
     
     limite = folium.GeoJson(
         data=dados,
