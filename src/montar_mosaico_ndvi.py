@@ -1,6 +1,7 @@
 import argparse
 import json
 from contextlib import ExitStack
+from datetime import date
 from pathlib import Path
 
 import numpy as np
@@ -26,6 +27,7 @@ def montar_mosaico_ndvi(arquivos, arquivo_saida):
 
         referencia = fontes[0]
         cenas = []
+        datas = []
 
         for fonte in fontes:
             if fonte.count != 1 or fonte.dtypes != ("float32",):
@@ -54,6 +56,32 @@ def montar_mosaico_ndvi(arquivos, arquivo_saida):
 
             cenas.append(id_cena)
 
+            data_texto = tags.get("data_observacao_utc")
+
+            if not data_texto:
+                raise ValueError(
+                    "A cena precisa informar a data de observacao UTC"
+                )
+
+            try:
+                data_cena = date.fromisoformat(data_texto)
+            except ValueError as erro:
+                raise ValueError(
+                    f"Data de observacao invalida: {data_texto}"
+                ) from erro
+
+            if data_cena.isoformat() != data_texto:
+                raise ValueError(
+                    "A data de observacao precisa estar em AAAA-MM-DD"
+                )
+
+            datas.append(data_cena)
+
+        if len(set(datas)) != 1:
+            raise ValueError(
+                "As cenas do mosaico precisam ter a mesma data UTC"
+            )
+        
         mosaico, transformacao = merge(
             fontes,
             method="first",
@@ -96,6 +124,7 @@ def montar_mosaico_ndvi(arquivos, arquivo_saida):
                     ensure_ascii=False,
                 ),
                 criterio_sobreposicao="primeiro_pixel_valido",
+                data_observacao_utc=datas[0].isoformat(),
             )
 
     print(f"Mosaico NDVI salvo em: {arquivo_saida}")

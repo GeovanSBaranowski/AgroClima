@@ -1,10 +1,12 @@
 import argparse
 import json
+from datetime import date, datetime
 from pathlib import Path
 
 import numpy as np
 import rasterio
 
+from metadados_cena import obter_data_cena_utc
 from metadados_espectrais import obter_metadados_banda
 from ndvi import calcular_ndvi
 from reflectancia import converter_reflectancia
@@ -56,7 +58,20 @@ def aplicar_qualidade(resultado, arquivo_red, arquivo_mascara):
     )
 
 
-def salvar_ndvi(resultado, arquivo_red, arquivo_saida, id_cena):
+def salvar_ndvi(
+    resultado,
+    arquivo_red,
+    arquivo_saida,
+    id_cena,
+    *,
+    data_observacao,
+):
+    if (
+        not isinstance(data_observacao, date)
+        or isinstance(data_observacao, datetime)
+    ):
+        raise ValueError("A data de observacao precisa ser uma data")  # noqa: TRY004
+    
     arquivo_red = Path(arquivo_red).resolve()
     arquivo_saida = Path(arquivo_saida).resolve()
 
@@ -87,6 +102,7 @@ def salvar_ndvi(resultado, arquivo_red, arquivo_saida, id_cena):
                 id_cena=id_cena,
                 produto="NDVI",
                 qualidade="SCL aplicada",
+                data_observacao_utc=data_observacao.isoformat(),
             )
 
     print(f"NDVI salvo em: {arquivo_saida}")
@@ -201,7 +217,18 @@ def inspecionar_ndvi(
                 "O arquivo de saida precisa ser diferente das entradas"
             )
 
-        salvar_ndvi(resultado, arquivo_red, arquivo_saida, id_cena)
+        data_cena = obter_data_cena_utc(
+            dados_pagina,
+            id_cena,
+        )
+
+        salvar_ndvi(
+            resultado,
+            arquivo_red,
+            arquivo_saida,
+            id_cena,
+            data_observacao=data_cena,
+        )
 
 
 if __name__ == "__main__":
