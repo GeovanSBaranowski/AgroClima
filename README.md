@@ -25,6 +25,7 @@ O projeto realiza:
 - Cálculo de NDVI por cena, mosaico com máscara de qualidade e visualização com legenda.
 - Consulta e mosaico de elevação da superfície, cálculo de inclinação e visualização no mapa.
 - Inspeção e visualização de unidades de solo do IBGE com legenda e popup.
+- Consulta integrada de clima, solo, NDVI, elevação e inclinação no ponto de referência.
 - Inspeção, recorte e mosaico da classificação SCL do Sentinel-2.
 - Contagem das categorias SCL e cálculo de seus percentuais entre os pixels disponíveis.
 - Avaliação da cobertura de dados SCL em relação ao polígono da consulta.
@@ -533,6 +534,33 @@ Gere o mapa com os dados de solo e, se desejar, acrescente os argumentos opciona
 O limite municipal usado pelo mapa é simplificado e não coincide completamente com o contorno do recorte de solo do BDiA. Uma comparação também foi feita com um limite de qualidade máxima obtido pela API de malhas; diferenças persistiram. Os dados originais foram preservados e a causa dessas diferenças ainda precisa ser investigada. O mapa de comparação usa `src/comparar_limites_solo.py` para medir as diferenças e `src/mapa_diferencas_solo.py` para mostrá-las; o caminho dos arquivos de entrada deve ser informado na execução.
 
 O IBGE informa que, embora a base cartográfica de pedologia seja apresentada na escala 1:250.000, o conteúdo temático associado à quantidade de pontos amostrais corresponde a um levantamento em 1:1.000.000. O recorte é regional e não substitui levantamento detalhado ou análise de solo de uma propriedade. As camadas são apresentadas juntas para exploração, sem validação agronômica.
+
+## Consulta integrada no ponto de referência
+
+O marcador do mapa pode reunir as observações meteorológicas e os dados dos arquivos espaciais informados. O ponto é definido em `src/configuracao.py`; a consulta de solo procura todos os polígonos que cobrem o ponto, incluindo bordas compartilhadas. Não encontrar polígonos é informado ao usuário.
+
+Para consultar separadamente o solo e um raster de uma banda:
+
+```powershell
+$arquivoSolo = ".\data\raw\ibge_pedologia\chapeco_bdia\pedo_area_mu_4204202.zip"
+$ndvi = ".\data\processed\sentinel2\20261106T001415084591Z\chapeco_20240201_ndvi_mosaico.tif"
+.\.venv\Scripts\python.exe .\src\consultar_solo.py --arquivo $arquivoSolo
+.\.venv\Scripts\python.exe .\src\consultar_raster_ponto.py --raster $ndvi
+```
+
+A consulta raster transforma as coordenadas para o sistema do arquivo e lê o pixel que contém o ponto. Posições fora do raster, mascaradas ou com valor não finito são indisponíveis; zero válido é preservado. A informação de solo é a unidade de mapeamento regional que cobre o ponto e pode conter vários componentes.
+
+Para exibir clima, solo, NDVI, elevação e inclinação no mesmo popup, informe os arquivos já gerados:
+
+```powershell
+$elevacao = ".\data\processed\copernicus_dem\20261111T002755596384Z\chapeco_elevacao_utm.tif"
+$inclinacao = ".\data\processed\copernicus_dem\20261111T002755596384Z\chapeco_inclinacao_graus.tif"
+.\.venv\Scripts\python.exe .\src\gerar_mapa.py --data 2024-02-01 --solo $arquivoSolo --ndvi $ndvi --elevacao $elevacao --inclinacao $inclinacao
+```
+
+Os caminhos de exemplo dependem dos arquivos locais produzidos nas etapas anteriores. Os argumentos espaciais são opcionais: quando um deles é informado, o mapa lê o arquivo correspondente para a camada e para o ponto. O PostgreSQL precisa estar disponível. O valor espacial pode aparecer como indisponível, e a ausência de observações climáticas não impede a apresentação do solo.
+
+O programa não confirma automaticamente a data do raster de NDVI nem a correspondência entre os arquivos e seus tipos. A data em `--data` refere-se às observações meteorológicas; selecione e confira as fontes manualmente. Os dados da NASA POWER têm resolução regional: o ponto consultado não representa necessariamente uma estação local. A combinação das fontes não é diagnóstico de solo ou de lavoura.
 
 ## Tratamento dos dados meteorológicos
 

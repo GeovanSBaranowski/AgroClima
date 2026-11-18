@@ -22,6 +22,8 @@ from camada_solo import (
 from coletar_limite import validar_limite
 from configuracao import LATITUDE_REFERENCIA, LONGITUDE_REFERENCIA
 from consultar_clima import consultar_observacoes
+from consultar_raster_ponto import consultar_raster_ponto
+from consultar_solo import consultar_solo_ponto, formatar_valor
 
 
 def montar_popup(registros, data_observacao):
@@ -53,6 +55,76 @@ def montar_popup(registros, data_observacao):
         linhas.append(
             f"{escape(nome)}: {escape(texto_valor)}"
         )
+
+    return "<br>".join(linhas)
+
+def montar_popup_solo(unidades):
+    linhas = [
+        "<b>Unidades de mapeamento no ponto</b>",
+        "Fonte: IBGE | BDiA",
+    ]
+
+    if unidades.empty:
+        linhas.append("Nenhuma unidade de solo encontrada neste ponto.")
+        return "<br>".join(linhas)
+
+    for _, unidade in unidades.iterrows():
+        categoria = formatar_valor(unidade.get("leg_ordem"))
+        legenda = formatar_valor(unidade.get("legenda"))
+
+        linhas.append(
+            f"Categoria: {escape(categoria)}"
+        )
+        linhas.append(
+            f"Unidade: {escape(legenda)}"
+        )
+
+    return "<br>".join(linhas)
+
+def montar_popup_integrado(registros, data_observacao, unidades_solo=None):
+    conteudo = montar_popup(registros, data_observacao)
+
+    if unidades_solo is not None:
+        conteudo += "<br><br>" + montar_popup_solo(unidades_solo)
+
+    return conteudo
+
+def montar_popup_ndvi(valor):
+    linhas = [
+        "<b>NDVI no ponto</b>",
+        "Fonte: Sentinel-2 | Data da imagem nao verificada",
+    ]
+
+    if valor is None:
+        linhas.append("NDVI indisponivel neste ponto.")
+    else:
+        linhas.append(f"NDVI: {valor:.4f}")
+
+    return "<br>".join(linhas)
+
+def montar_popup_superficie(valores):
+    linhas = [
+        "<b>Superficie no ponto</b>",
+        "Fonte: Copernicus DEM",
+    ]
+
+    campos = [
+        ("elevacao", "Elevacao", "m"),
+        ("inclinacao", "Inclinacao", "graus"),
+    ]
+
+    for chave, nome, unidade in campos:
+        if chave not in valores:
+            continue
+
+        valor = valores[chave]
+
+        if valor is None:
+            texto = "Indisponivel"
+        else:
+            texto = f"{valor:.2f} {unidade}"
+
+        linhas.append(f"{nome}: {texto}")
 
     return "<br>".join(linhas)
 
@@ -173,6 +245,9 @@ if __name__ == "__main__":
 
     ponto_referencia = [LATITUDE_REFERENCIA, LONGITUDE_REFERENCIA]
 
+    ndvi_consultado = False
+    valor_ndvi = None
+
     load_dotenv(raiz_projeto / ".env")
 
     with psycopg.connect(
@@ -190,7 +265,7 @@ if __name__ == "__main__":
             longitude=ponto_referencia[1],
         )
 
-    conteudo_popup = montar_popup(
+    conteudo_popup = montar_popup_integrado(
         registros,
         argumentos.data,
     )
@@ -217,6 +292,14 @@ if __name__ == "__main__":
         arquivo_ndvi = (
             raiz_projeto / argumentos.ndvi
         ).resolve()
+
+        valor_ndvi = consultar_raster_ponto(
+            arquivo_ndvi,
+            latitude=ponto_referencia[0],
+            longitude=ponto_referencia[1],
+        )
+
+        ndvi_consultado = True
 
         adicionar_camada_ndvi(
             mapa,
@@ -348,6 +431,18 @@ if __name__ == "__main__":
 
         solos = gpd.read_file(arquivo_solo)
 
+        unidades_no_ponto = consultar_solo_ponto(
+            solos,
+            latitude=ponto_referencia[0],
+            longitude=ponto_referencia[1],
+        )
+
+        conteudo_popup = montar_popup_integrado(
+            registros,
+            argumentos.data,
+            unidades_no_ponto,
+        )
+
         adicionar_camada_solo(
             mapa,
             solos,
@@ -426,6 +521,38 @@ if __name__ == "__main__":
 
         print(f"Contornos de cenas adicionados: {total_contornos}")
 
+    if ndvi_consultado:
+        conteudo_popup += "<br><br>" + montar_popup_ndvi(valor_ndvi)
+
+    valores_superficie = {}
+
+    if argumentos.elevacao is not None:
+        arquivo_elevacao = (
+            raiz_projeto / argumentos.elevacao
+        ).resolve()
+
+        valores_superficie["elevacao"] = consultar_raster_ponto(
+            arquivo_elevacao,
+            latitude=ponto_referencia[0],
+            longitude=ponto_referencia[1],
+        )
+
+    if argumentos.inclinacao is not None:
+        arquivo_inclinacao = (
+            raiz_projeto / argumentos.inclinacao
+        ).resolve()
+
+        valores_superficie["inclinacao"] = consultar_raster_ponto(
+            arquivo_inclinacao,
+            latitude=ponto_referencia[0],
+            longitude=ponto_referencia[1],
+        )
+
+    if valores_superficie:
+        conteudo_popup += (
+            "<br><br>" + montar_popup_superficie(valores_superficie)
+        )
+        
     folium.Marker(
         location=ponto_referencia,
         tooltip="Consultar observações meteorológicas",
