@@ -1,3 +1,5 @@
+from datetime import date
+
 import numpy as np
 import pytest
 import rasterio
@@ -35,7 +37,13 @@ def test_salva_valores_e_mascara_interna(tmp_path):
         dtype="float32",
     )
 
-    salvar_ndvi(ndvi, referencia, saida, "cena_1")
+    salvar_ndvi(
+        ndvi,
+        referencia,
+        saida,
+        "cena_1",
+        data_observacao=date(2024, 2, 1),
+    )
 
     with rasterio.open(saida) as arquivo:
         resultado = arquivo.read(1, masked=True)
@@ -47,6 +55,7 @@ def test_salva_valores_e_mascara_interna(tmp_path):
         )
         assert arquivo.tags()["id_cena"] == "cena_1"
         assert arquivo.tags()["produto"] == "NDVI"
+        assert arquivo.tags()["data_observacao_utc"] == "2024-02-01"
 
         np.testing.assert_array_equal(
             np.ma.getmaskarray(resultado),
@@ -67,7 +76,33 @@ def test_nao_sobrescreve_a_banda_de_referencia(tmp_path):
     )
 
     with pytest.raises(ValueError, match="diferente da banda"):
-        salvar_ndvi(ndvi, referencia, referencia, "cena_1")
+        salvar_ndvi(
+            ndvi,
+            referencia,
+            referencia,
+            "cena_1",
+            data_observacao=date(2024, 2, 1),
+        )
 
     with rasterio.open(referencia) as arquivo:
         assert arquivo.dtypes == ("uint16",)
+
+def test_rejeita_data_em_texto(tmp_path):
+    referencia = tmp_path / "red.tif"
+    saida = tmp_path / "ndvi.tif"
+    criar_referencia(referencia)
+
+    ndvi = np.ma.array(
+        np.full((2, 2), 0.5, dtype="float32")
+    )
+
+    with pytest.raises(ValueError, match="precisa ser uma data"):
+        salvar_ndvi(
+            ndvi,
+            referencia,
+            saida,
+            "cena_1",
+            data_observacao="2024-02-01",
+        )
+
+    assert not saida.exists()

@@ -8,7 +8,14 @@ from rasterio.transform import from_origin
 from montar_mosaico_ndvi import montar_mosaico_ndvi
 
 
-def criar_ndvi(caminho, dados, mascara, origem_x, id_cena):
+def criar_ndvi(
+    caminho,
+    dados,
+    mascara,
+    origem_x,
+    id_cena,
+    data_observacao="2024-02-01",
+):
     with rasterio.Env(GDAL_TIFF_INTERNAL_MASK=True):  # noqa: SIM117
         with rasterio.open(
             caminho,
@@ -29,6 +36,11 @@ def criar_ndvi(caminho, dados, mascara, origem_x, id_cena):
                 produto="NDVI",
                 qualidade="SCL aplicada",
             )
+
+            if data_observacao is not None:
+                destino.update_tags(
+                    data_observacao_utc=data_observacao,
+                )
 
 
 def test_mosaico_preserva_valores_mascaras_e_prioridade(tmp_path):
@@ -82,6 +94,7 @@ def test_mosaico_preserva_valores_mascaras_e_prioridade(tmp_path):
             "cena_2",
         ]
 
+        assert arquivo.tags()["data_observacao_utc"] == "2024-02-01"
 
 def test_nao_sobrescreve_arquivo_de_entrada(tmp_path):
     entrada = tmp_path / "cena.tif"
@@ -120,5 +133,47 @@ def test_rejeita_arquivo_sem_identificacao_de_ndvi(tmp_path):
 
     with pytest.raises(ValueError, match="produto NDVI"):
         montar_mosaico_ndvi([entrada], saida)
+
+    assert not saida.exists()
+
+@pytest.mark.parametrize(
+    "data_segunda",
+    [
+        None,
+        "2024-02-30",
+        "2024-02-02",
+    ],
+)
+def test_rejeita_data_ausente_invalida_ou_diferente(
+    tmp_path,
+    data_segunda,
+):
+    primeira = tmp_path / "primeira.tif"
+    segunda = tmp_path / "segunda.tif"
+    saida = tmp_path / "mosaico.tif"
+
+    dados = [[0.1, 0.2], [0.3, 0.4]]
+    mascara = [[255, 255], [255, 255]]
+
+    criar_ndvi(
+        primeira,
+        dados=dados,
+        mascara=mascara,
+        origem_x=300000,
+        id_cena="cena_1",
+        data_observacao="2024-02-01",
+    )
+
+    criar_ndvi(
+        segunda,
+        dados=dados,
+        mascara=mascara,
+        origem_x=300010,
+        id_cena="cena_2",
+        data_observacao=data_segunda,
+    )
+
+    with pytest.raises(ValueError):
+        montar_mosaico_ndvi([primeira, segunda], saida)
 
     assert not saida.exists()

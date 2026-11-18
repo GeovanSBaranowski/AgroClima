@@ -24,6 +24,7 @@ from configuracao import LATITUDE_REFERENCIA, LONGITUDE_REFERENCIA
 from consultar_clima import consultar_observacoes
 from consultar_raster_ponto import consultar_raster_ponto
 from consultar_solo import consultar_solo_ponto, formatar_valor
+from data_ndvi import avaliar_data_raster_ndvi
 
 
 def montar_popup(registros, data_observacao):
@@ -89,11 +90,30 @@ def montar_popup_integrado(registros, data_observacao, unidades_solo=None):
 
     return conteudo
 
-def montar_popup_ndvi(valor):
+def montar_popup_ndvi(valor, avaliacao_data=None):
     linhas = [
         "<b>NDVI no ponto</b>",
-        "Fonte: Sentinel-2 | Data da imagem nao verificada",
+        "Fonte: Sentinel-2",
     ]
+
+    if avaliacao_data is None or avaliacao_data["situacao"] == "ausente":
+        linhas.append("Data da imagem nao verificada: tag ausente.")
+
+    elif avaliacao_data["situacao"] == "invalida":
+        linhas.append("Data da imagem nao verificada: tag invalida.")
+
+    elif avaliacao_data["situacao"] in ("coincide", "diferente"):
+        data_ndvi = avaliacao_data["data_ndvi"]
+
+        linhas.append(f"Data registrada: {data_ndvi:%d/%m/%Y} UTC")
+
+        if avaliacao_data["situacao"] == "coincide":
+            linhas.append("A data coincide com a data climatica.")
+        else:
+            linhas.append("A data difere da data climatica.")
+
+    else:
+        raise ValueError("Situacao da data de NDVI desconhecida")
 
     if valor is None:
         linhas.append("NDVI indisponivel neste ponto.")
@@ -299,6 +319,10 @@ if __name__ == "__main__":
             longitude=ponto_referencia[1],
         )
 
+        avaliacao_data_ndvi = avaliar_data_raster_ndvi(
+            arquivo_ndvi,
+            argumentos.data,
+        )
         ndvi_consultado = True
 
         adicionar_camada_ndvi(
@@ -522,7 +546,10 @@ if __name__ == "__main__":
         print(f"Contornos de cenas adicionados: {total_contornos}")
 
     if ndvi_consultado:
-        conteudo_popup += "<br><br>" + montar_popup_ndvi(valor_ndvi)
+        conteudo_popup += "<br><br>" + montar_popup_ndvi(
+            valor_ndvi,
+            avaliacao_data_ndvi,
+        )
 
     valores_superficie = {}
 

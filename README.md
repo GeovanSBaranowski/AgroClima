@@ -412,7 +412,7 @@ foreach ($cena in @($idCenaSul, $idCenaNorte)) {
 }
 ```
 
-O cálculo verifica se as bandas pertencem à mesma cena e têm a mesma grade. A máscara mantém as classes SCL 4, 5 e 6. Seu alinhamento não aumenta o detalhe original da SCL, de 20 metros. O usuário deve assegurar que a máscara corresponda à cena: a grade é verificada, mas sua origem ainda não é validada automaticamente. A saída é um GeoTIFF `float32` com máscara interna e identificação da cena.
+O cálculo verifica se as bandas pertencem à mesma cena e têm a mesma grade. A máscara mantém as classes SCL 4, 5 e 6. Seu alinhamento não aumenta o detalhe original da SCL, de 20 metros. O usuário deve assegurar que a máscara corresponda à cena: a grade é verificada, mas sua origem ainda não é validada automaticamente. A saída é um GeoTIFF `float32` com máscara interna, identificação da cena e data de observação em UTC obtida dos metadados STAC.
 
 Monte o mosaico e avalie sua cobertura dentro do polígono:
 
@@ -426,7 +426,7 @@ $consultaSatelite = Join-Path $pastaConsulta "consulta.json"
 .\.venv\Scripts\python.exe .\src\avaliar_mosaico_ndvi.py --raster $mosaicoNdvi --consulta $consultaSatelite
 ```
 
-Na sobreposição, o mosaico utiliza o primeiro pixel válido conforme a ordem informada; não escolhe automaticamente a cena de melhor qualidade. Os arquivos de origem e sua ordem são registrados nas tags. A cobertura considera os pixels válidos após o filtro e o polígono da consulta, inclusive áreas fora da extensão do raster.
+Na sobreposição, o mosaico utiliza o primeiro pixel válido conforme a ordem informada; não escolhe automaticamente a cena de melhor qualidade. Os arquivos de origem e sua ordem são registrados nas tags. Para montar o mosaico, todos os arquivos de NDVI precisam informar uma data de observação válida e igual; essa data também é registrada no mosaico. Arquivos antigos sem data precisam ser gerados novamente para essa operação. A cobertura considera os pixels válidos após o filtro e o polígono da consulta, inclusive áreas fora da extensão do raster.
 
 Para exibir o NDVI junto à imagem colorida e aos dados meteorológicos:
 
@@ -437,7 +437,7 @@ $imagemColorida = Join-Path $pastaRecortes "chapeco_20240201_mosaico.tif"
 
 Abra o mapa pelo servidor HTTP descrito acima. A legenda mostra faixas escolhidas para visualização; valores fora de `[-1, 1]` aparecem em roxo. A legenda permanece visível quando a camada é desligada. A imagem exibida é uma prévia reduzida; o GeoTIFF conserva seus valores e sua grade.
 
-O NDVI indica uma relação entre as reflectâncias, não identifica por si só lavouras nem diagnostica sua saúde. Reflectâncias negativas podem gerar valores de NDVI fora de `[-1, 1]`; esses valores são mantidos e informados para investigação. A SCL pode apresentar erros. A verificação das datas das cenas, do mosaico e das observações exibidas ainda é manual.
+O NDVI indica uma relação entre as reflectâncias, não identifica por si só lavouras nem diagnostica sua saúde. Reflectâncias negativas podem gerar valores de NDVI fora de `[-1, 1]`; esses valores são mantidos e informados para investigação. A SCL pode apresentar erros. O mapa compara a data registrada no arquivo de NDVI com a data solicitada para o clima e informa se coincidem, diferem ou se a data do NDVI não está disponível ou é inválida. A comparação usa os metadados do arquivo e não verifica novamente as fontes originais.
 
 ## Elevação e inclinação da superfície
 
@@ -560,7 +560,7 @@ $inclinacao = ".\data\processed\copernicus_dem\20261111T002755596384Z\chapeco_in
 
 Os caminhos de exemplo dependem dos arquivos locais produzidos nas etapas anteriores. Os argumentos espaciais são opcionais: quando um deles é informado, o mapa lê o arquivo correspondente para a camada e para o ponto. O PostgreSQL precisa estar disponível. O valor espacial pode aparecer como indisponível, e a ausência de observações climáticas não impede a apresentação do solo.
 
-O programa não confirma automaticamente a data do raster de NDVI nem a correspondência entre os arquivos e seus tipos. A data em `--data` refere-se às observações meteorológicas; selecione e confira as fontes manualmente. Os dados da NASA POWER têm resolução regional: o ponto consultado não representa necessariamente uma estação local. A combinação das fontes não é diagnóstico de solo ou de lavoura.
+A data em `--data` refere-se às observações meteorológicas. O programa compara essa data com a data registrada no raster de NDVI, mas não confirma a correspondência entre todos os arquivos e seus tipos; selecione e confira as fontes. Os dados da NASA POWER têm resolução regional: o ponto consultado não representa necessariamente uma estação local. A combinação das fontes não é diagnóstico de solo ou de lavoura.
 
 ## Tratamento dos dados meteorológicos
 
