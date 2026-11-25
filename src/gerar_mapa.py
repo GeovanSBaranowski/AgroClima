@@ -21,6 +21,7 @@ from camada_solo import (
 )
 from coletar_limite import validar_limite
 from configuracao import LATITUDE_REFERENCIA, LONGITUDE_REFERENCIA
+from consulta_clique import ConsultaPorClique
 from consultar_clima import consultar_observacoes
 from consultar_raster_ponto import consultar_raster_ponto
 from consultar_solo import consultar_solo_ponto, formatar_valor
@@ -589,6 +590,7 @@ if __name__ == "__main__":
         ),
     ).add_to(mapa)
 
+    ConsultaPorClique().add_to(mapa)
     folium.LayerControl(collapsed=False).add_to(mapa)
     mapa.fit_bounds(limite.get_bounds())
 

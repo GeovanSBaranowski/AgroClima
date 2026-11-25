@@ -562,6 +562,23 @@ Os caminhos de exemplo dependem dos arquivos locais produzidos nas etapas anteri
 
 A data em `--data` refere-se às observações meteorológicas. O programa compara essa data com a data registrada no raster de NDVI, mas não confirma a correspondência entre todos os arquivos e seus tipos; selecione e confira as fontes. Os dados da NASA POWER têm resolução regional: o ponto consultado não representa necessariamente uma estação local. A combinação das fontes não é diagnóstico de solo ou de lavoura.
 
+## Consulta por clique no mapa
+
+Depois de gerar o mapa, inicie o servidor local informando o raster de NDVI usado na consulta. Os arquivos de elevação, inclinação e solo são opcionais. Use os mesmos arquivos informados ao gerar as camadas do mapa: eles são configurados separadamente e sua correspondência não é conferida automaticamente.
+
+```powershell
+$ndvi = ".\data\processed\sentinel2\20261106T001415084591Z\chapeco_20240201_ndvi_mosaico_datado.tif"
+$elevacao = ".\data\processed\copernicus_dem\20261111T002755596384Z\chapeco_elevacao_utm.tif"
+$inclinacao = ".\data\processed\copernicus_dem\20261111T002755596384Z\chapeco_inclinacao_graus.tif"
+$arquivoSolo = ".\data\raw\ibge_pedologia\chapeco_bdia\pedo_area_mu_4204202.zip"
+.\.venv\Scripts\python.exe .\src\gerar_mapa.py --data 2024-02-01 --ndvi $ndvi --elevacao $elevacao --inclinacao $inclinacao --solo $arquivoSolo
+.\.venv\Scripts\python.exe .\src\servidor_mapa.py --ndvi $ndvi --elevacao $elevacao --inclinacao $inclinacao --solo $arquivoSolo
+```
+
+Com o servidor em execução, abra `http://127.0.0.1:8001/chapeco.html` e clique no mapa. O popup apresenta coordenadas, NDVI e sua data informada no arquivo, elevação, inclinação e unidades de solo encontradas. Valores fora da cobertura ou sem dados válidos são indicados como indisponíveis. A data do NDVI consultado é lida da tag do raster e não é comparada automaticamente à data climática nesse popup.
+
+As observações climáticas continuam disponíveis no marcador do ponto de referência: o clique não consulta clima para outras coordenadas. A camada de solo representa um mapeamento regional e não substitui uma análise local. Para encerrar o servidor, pressione `Ctrl+C` no terminal.
+
 ## Tratamento dos dados meteorológicos
 
 Cada registro representa uma variável meteorológica em uma data e localização. As unidades recebidas são validadas antes da carga.
